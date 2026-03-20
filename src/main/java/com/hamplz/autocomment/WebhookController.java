@@ -17,10 +17,12 @@ public class WebhookController {
 
     private final GithubDiffService githubDiffService;
     private final GptReviewService gptReviewService;
+    private final GithubCommentService githubCommentService;
 
-    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService) {
+    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService) {
         this.githubDiffService = githubDiffService;
         this.gptReviewService = gptReviewService;
+        this.githubCommentService = githubCommentService;
     }
 
     @PostMapping("/github")
@@ -56,6 +58,8 @@ public class WebhookController {
 
             String reviewComment = gptReviewService.generateReview(diffContent);
             log.info("\n==== GPT REVIEW START ====\n{}\n==== GPT REVIEW END ====\n", reviewComment);
+
+            githubCommentService.createComment(repoFullName, prNumber, reviewComment);
 
         } catch (Exception e) {
             log.error("==== PR 처리 실패 ====", e);
