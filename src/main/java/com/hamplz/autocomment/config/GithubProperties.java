@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "github")
 public record GithubProperties(
     String token,
-    String apiUrl
+    String apiUrl,
+    String reviewBranch
 ) {
 }
