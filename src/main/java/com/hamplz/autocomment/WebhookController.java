@@ -16,9 +16,11 @@ public class WebhookController {
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
 
     private final GithubDiffService githubDiffService;
+    private final GptReviewService gptReviewService;
 
-    public WebhookController(GithubDiffService githubDiffService) {
+    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService) {
         this.githubDiffService = githubDiffService;
+        this.gptReviewService = gptReviewService;
     }
 
     @PostMapping("/github")
@@ -50,11 +52,13 @@ public class WebhookController {
 
         try {
             String diffContent = githubDiffService.getPullRequestDiff(diffUrl);
+            log.info("\n==== PR DIFF START ====\n{}\n==== PR DIFF END ====\n", diffContent);
 
-            log.info("==== PR DIFF START ====\n{}\n==== PR DIFF END ====", diffContent);
+            String reviewComment = gptReviewService.generateReview(diffContent);
+            log.info("\n==== GPT REVIEW START ====\n{}\n==== GPT REVIEW END ====\n", reviewComment);
 
         } catch (Exception e) {
-            log.error("==== DIFF 조회 실패 ====", e);
+            log.error("==== PR 처리 실패 ====", e);
         }
 
         return ResponseEntity.ok("OK!: GitHub Webhook Received");
