@@ -13,7 +13,7 @@ public class ReviewFileFormatter {
         int prNumber,
         String title,
         String action,
-        String diffUrl,
+        String diffFileUrl,
         String reviewComment
     ) {
         String reviewdAt = LocalDateTime.now()
@@ -27,7 +27,7 @@ public class ReviewFileFormatter {
             - Title: %s
             - Action: %s
             - Review At: %s
-            - Diff URL: %s
+            - Diff File URL: %s
             
             ## GPT Review
             
@@ -38,7 +38,7 @@ public class ReviewFileFormatter {
                 title,
                 action,
                 reviewdAt,
-                diffUrl,
+                diffFileUrl,
                 reviewComment
         );
     }

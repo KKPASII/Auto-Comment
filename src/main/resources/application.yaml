@@ -10,4 +10,5 @@ openai:
 github:
   token: ${GITHUB_TOKEN}
   api-url: https://api.github.com
-  review-branch: review-logs
+  base-url: https://github.com/
+  review-branch: auto-comment-logs

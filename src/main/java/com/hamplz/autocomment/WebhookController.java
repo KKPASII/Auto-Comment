@@ -14,15 +14,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
+    private static final String AUTO_COMMENT_BRANCH_NAME = "auto-comment-logs";
 
     private final GithubDiffService githubDiffService;
     private final GptReviewService gptReviewService;
     private final GithubCommentService githubCommentService;
+    private final GithubFileService githubFileService;
 
-    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService) {
+    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService, GithubFileService githubFileService) {
         this.githubDiffService = githubDiffService;
         this.gptReviewService = gptReviewService;
         this.githubCommentService = githubCommentService;
+        this.githubFileService = githubFileService;
     }
 
     @PostMapping("/github")
@@ -33,8 +36,13 @@ public class WebhookController {
         int prNumber = payload.path("number").asInt();
 
         JsonNode pr = payload.path("pull_request");
+        if (pr.isMissingNode()) {
+            log.warn("pull_request 없음 -> 무시");
+            return ResponseEntity.ok("ignored");
+        }
         String title = pr.path("title").asText();
         String diffUrl = pr.path("diff_url").asText();
+        String headRef = pr.path("head").path("ref").asText();
 
         JsonNode repository = payload.path("repository");
         String repoFullName = repository.path("full_name").asText();
@@ -44,6 +52,12 @@ public class WebhookController {
         log.info("title = {}", title);
         log.info("repoFullName = {}", repoFullName);
         log.info("diffUrl = {}", diffUrl);
+        log.info("headRef = {}", headRef);
+
+        if (AUTO_COMMENT_BRANCH_NAME.equals(headRef)) {
+            log.info("자동 생성 브랜치 이벤트 무시됨");
+            return ResponseEntity.ok("ignored");
+        }
 
         if (!isReviewTargetAction(action)) {
             log.info("리뷰 대상 action이 아니므로 종료합니다.");
@@ -60,6 +74,14 @@ public class WebhookController {
             log.info("\n==== GPT REVIEW START ====\n{}\n==== GPT REVIEW END ====\n", reviewComment);
 
             githubCommentService.createComment(repoFullName, prNumber, reviewComment);
+
+            githubFileService.saveReviewFile(
+                repoFullName,
+                prNumber,
+                title,
+                action,
+                reviewComment
+            );
 
         } catch (Exception e) {
             log.error("==== PR 처리 실패 ====", e);
