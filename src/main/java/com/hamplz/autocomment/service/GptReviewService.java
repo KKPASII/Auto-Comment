@@ -1,4 +1,4 @@
-package com.hamplz.autocomment;
+package com.hamplz.autocomment.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hamplz.autocomment.config.OpenAiProperties;

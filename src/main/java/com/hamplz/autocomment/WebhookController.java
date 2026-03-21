@@ -1,6 +1,10 @@
 package com.hamplz.autocomment;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.hamplz.autocomment.service.GithubCommentService;
+import com.hamplz.autocomment.service.GithubDiffService;
+import com.hamplz.autocomment.service.GithubFileService;
+import com.hamplz.autocomment.service.GptReviewService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
