@@ -23,7 +23,7 @@ public class ReviewFileFormatter {
             # PR Review Log
             
             - Repository: %s
-            - PR Number: %d
+            - PR Number: #%d
             - Title: %s
             - Action: %s
             - Review At: %s
