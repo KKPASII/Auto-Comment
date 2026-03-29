@@ -1,6 +1,7 @@
 package com.hamplz.autocomment;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.hamplz.autocomment.dto.PullRequestWebhook;
 import com.hamplz.autocomment.service.GithubCommentService;
 import com.hamplz.autocomment.service.GithubDiffService;
 import com.hamplz.autocomment.service.GithubFileService;
@@ -24,46 +25,28 @@ public class WebhookController {
     private final GptReviewService gptReviewService;
     private final GithubCommentService githubCommentService;
     private final GithubFileService githubFileService;
+    private final WebhookPayloadParser webhookPayloadParser;
 
-    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService, GithubFileService githubFileService) {
+    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService, GithubFileService githubFileService, WebhookPayloadParser webhookPayloadParser) {
         this.githubDiffService = githubDiffService;
         this.gptReviewService = gptReviewService;
         this.githubCommentService = githubCommentService;
         this.githubFileService = githubFileService;
+        this.webhookPayloadParser = webhookPayloadParser;
     }
 
     @PostMapping("/github")
     public ResponseEntity<String> receive(@RequestBody JsonNode payload) {
         log.info("==== GitHub Webhook Received ====");
 
-        String action = payload.path("action").asText();
-        int prNumber = payload.path("number").asInt();
+        PullRequestWebhook parsedWebhook = webhookPayloadParser.parse(payload);
 
-        JsonNode pr = payload.path("pull_request");
-        if (pr.isMissingNode()) {
-            log.warn("pull_request 없음 -> 무시");
-            return ResponseEntity.ok("ignored");
-        }
-        String title = pr.path("title").asText();
-        String diffUrl = pr.path("diff_url").asText();
-        String headRef = pr.path("head").path("ref").asText();
-
-        JsonNode repository = payload.path("repository");
-        String repoFullName = repository.path("full_name").asText();
-
-        log.info("action = {}", action);
-        log.info("prNumber = {}", prNumber);
-        log.info("title = {}", title);
-        log.info("repoFullName = {}", repoFullName);
-        log.info("diffUrl = {}", diffUrl);
-        log.info("headRef = {}", headRef);
-
-        if (AUTO_COMMENT_BRANCH_NAME.equals(headRef)) {
+        if (AUTO_COMMENT_BRANCH_NAME.equals(parsedWebhook.headRef())) {
             log.info("자동 생성 브랜치 이벤트 무시됨");
             return ResponseEntity.ok("ignored");
         }
 
-        if (!isReviewTargetAction(action)) {
+        if (!isReviewTargetAction(parsedWebhook.action())) {
             log.info("리뷰 대상 action이 아니므로 종료합니다.");
             return ResponseEntity.ok("ignored");
         }
@@ -71,19 +54,19 @@ public class WebhookController {
         log.info("리뷰 대상 PR 이벤트입니다.");
 
         try {
-            String diffContent = githubDiffService.getPullRequestDiff(diffUrl);
+            String diffContent = githubDiffService.getPullRequestDiff(parsedWebhook.diffUrl());
             log.info("\n==== PR DIFF START ====\n{}\n==== PR DIFF END ====\n", diffContent);
 
             String reviewComment = gptReviewService.generateReview(diffContent);
             log.info("\n==== GPT REVIEW START ====\n{}\n==== GPT REVIEW END ====\n", reviewComment);
 
-            githubCommentService.createComment(repoFullName, prNumber, reviewComment);
+            githubCommentService.createComment(parsedWebhook.repoFullName(), parsedWebhook.prNumber(), reviewComment);
 
             githubFileService.saveReviewFile(
-                repoFullName,
-                prNumber,
-                title,
-                action,
+                parsedWebhook.repoFullName(),
+                parsedWebhook.prNumber(),
+                parsedWebhook.title(),
+                parsedWebhook.action(),
                 reviewComment
             );
 
