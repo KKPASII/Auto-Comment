@@ -19,20 +19,21 @@ import org.springframework.web.bind.annotation.RestController;
 public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
-    private static final String AUTO_COMMENT_BRANCH_NAME = "auto-comment-logs";
 
     private final GithubDiffService githubDiffService;
     private final GptReviewService gptReviewService;
     private final GithubCommentService githubCommentService;
     private final GithubFileService githubFileService;
     private final WebhookPayloadParser webhookPayloadParser;
+    private final WebhookEventFilter webhookEventFilter;
 
-    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService, GithubFileService githubFileService, WebhookPayloadParser webhookPayloadParser) {
+    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService, GithubFileService githubFileService, WebhookPayloadParser webhookPayloadParser, WebhookEventFilter webhookEventFilter) {
         this.githubDiffService = githubDiffService;
         this.gptReviewService = gptReviewService;
         this.githubCommentService = githubCommentService;
         this.githubFileService = githubFileService;
         this.webhookPayloadParser = webhookPayloadParser;
+        this.webhookEventFilter = webhookEventFilter;
     }
 
     @PostMapping("/github")
@@ -41,13 +42,8 @@ public class WebhookController {
 
         PullRequestWebhook parsedWebhook = webhookPayloadParser.parse(payload);
 
-        if (AUTO_COMMENT_BRANCH_NAME.equals(parsedWebhook.headRef())) {
-            log.info("자동 생성 브랜치 이벤트 무시됨");
-            return ResponseEntity.ok("ignored");
-        }
-
-        if (!isReviewTargetAction(parsedWebhook.action().getAction())) {
-            log.info("리뷰 대상 action이 아니므로 종료합니다.");
+        if (!webhookEventFilter.isReviewTarget(parsedWebhook)) {
+            log.info("리뷰 대상이 아니므로 종료합니다.");
             return ResponseEntity.ok("ignored");
         }
 
@@ -75,12 +71,5 @@ public class WebhookController {
         }
 
         return ResponseEntity.ok("OK!: GitHub Webhook Received");
-    }
-
-    private boolean isReviewTargetAction(String action) {
-        return switch (action) {
-            case "opened", "synchronize", "reopened" -> true;
-            default -> false;
-        };
     }
 }
