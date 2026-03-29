@@ -46,7 +46,7 @@ public class WebhookController {
             return ResponseEntity.ok("ignored");
         }
 
-        if (!isReviewTargetAction(parsedWebhook.action())) {
+        if (!isReviewTargetAction(parsedWebhook.action().getAction())) {
             log.info("리뷰 대상 action이 아니므로 종료합니다.");
             return ResponseEntity.ok("ignored");
         }
@@ -66,7 +66,7 @@ public class WebhookController {
                 parsedWebhook.repoFullName(),
                 parsedWebhook.prNumber(),
                 parsedWebhook.title(),
-                parsedWebhook.action(),
+                parsedWebhook.action().getAction(),
                 reviewComment
             );
 

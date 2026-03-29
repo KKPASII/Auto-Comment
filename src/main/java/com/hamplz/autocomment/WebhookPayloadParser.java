@@ -1,6 +1,7 @@
 package com.hamplz.autocomment;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.hamplz.autocomment.dto.PullRequestAction;
 import com.hamplz.autocomment.dto.PullRequestWebhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,8 +13,7 @@ public class WebhookPayloadParser {
     private static final Logger log = LoggerFactory.getLogger(WebhookPayloadParser.class);
 
     public PullRequestWebhook parse(JsonNode webhookPayload) {
-
-        String action = webhookPayload.path("action").asText();
+        PullRequestAction action = PullRequestAction.from(webhookPayload.path("action").asText());
         int prNumber = webhookPayload.path("number").asInt();
 
         JsonNode pr = webhookPayload.path("pull_request");

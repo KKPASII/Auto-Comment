@@ -1,7 +1,7 @@
 package com.hamplz.autocomment.dto;
 
 public record PullRequestWebhook(
-    String action,
+    PullRequestAction action,
     int prNumber,
     String title,
     String diffUrl,
