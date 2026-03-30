@@ -2,10 +2,7 @@ package com.hamplz.autocomment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hamplz.autocomment.dto.PullRequestWebhook;
-import com.hamplz.autocomment.service.GithubCommentService;
-import com.hamplz.autocomment.service.GithubDiffService;
-import com.hamplz.autocomment.service.GithubFileService;
-import com.hamplz.autocomment.service.GptReviewService;
+import com.hamplz.autocomment.service.PullRequestReviewService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -20,55 +17,29 @@ public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
 
-    private final GithubDiffService githubDiffService;
-    private final GptReviewService gptReviewService;
-    private final GithubCommentService githubCommentService;
-    private final GithubFileService githubFileService;
     private final WebhookPayloadParser webhookPayloadParser;
     private final WebhookEventFilter webhookEventFilter;
+    private final PullRequestReviewService pullRequestReviewService;
 
-    public WebhookController(GithubDiffService githubDiffService, GptReviewService gptReviewService, GithubCommentService githubCommentService, GithubFileService githubFileService, WebhookPayloadParser webhookPayloadParser, WebhookEventFilter webhookEventFilter) {
-        this.githubDiffService = githubDiffService;
-        this.gptReviewService = gptReviewService;
-        this.githubCommentService = githubCommentService;
-        this.githubFileService = githubFileService;
+    public WebhookController(WebhookPayloadParser webhookPayloadParser, WebhookEventFilter webhookEventFilter, PullRequestReviewService pullRequestReviewService) {
         this.webhookPayloadParser = webhookPayloadParser;
         this.webhookEventFilter = webhookEventFilter;
+        this.pullRequestReviewService = pullRequestReviewService;
     }
 
     @PostMapping("/github")
     public ResponseEntity<String> receive(@RequestBody JsonNode payload) {
-        log.info("==== GitHub Webhook Received ====");
 
+        log.info("==== GitHub Webhook Received ====");
         PullRequestWebhook parsedWebhook = webhookPayloadParser.parse(payload);
 
         if (!webhookEventFilter.isReviewTarget(parsedWebhook)) {
             log.info("리뷰 대상이 아니므로 종료합니다.");
             return ResponseEntity.ok("ignored");
         }
-
         log.info("리뷰 대상 PR 이벤트입니다.");
 
-        try {
-            String diffContent = githubDiffService.getPullRequestDiff(parsedWebhook.diffUrl());
-            log.info("\n==== PR DIFF START ====\n{}\n==== PR DIFF END ====\n", diffContent);
-
-            String reviewComment = gptReviewService.generateReview(diffContent);
-            log.info("\n==== GPT REVIEW START ====\n{}\n==== GPT REVIEW END ====\n", reviewComment);
-
-            githubCommentService.createComment(parsedWebhook.repoFullName(), parsedWebhook.prNumber(), reviewComment);
-
-            githubFileService.saveReviewFile(
-                parsedWebhook.repoFullName(),
-                parsedWebhook.prNumber(),
-                parsedWebhook.title(),
-                parsedWebhook.action().getAction(),
-                reviewComment
-            );
-
-        } catch (Exception e) {
-            log.error("==== PR 처리 실패 ====", e);
-        }
+        pullRequestReviewService.review(parsedWebhook);
 
         return ResponseEntity.ok("OK!: GitHub Webhook Received");
     }
