@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record OpenAiProperties(
     String apiKey,
     String apiUrl,
-    String model
+    String model,
+    Double temperature
 ) {
 }

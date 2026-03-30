@@ -2,6 +2,8 @@ package com.hamplz.autocomment.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hamplz.autocomment.config.OpenAiProperties;
+import com.hamplz.autocomment.dto.ChatRequest;
+import com.hamplz.autocomment.dto.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -44,13 +46,13 @@ public class GptReviewService {
 
         String prompt = buildPrompt(diffContent);
 
-        Map<String, Object> requestBody = Map.of(
-            "model", openAiProperties.model(),
-            "messages", List.of(
-                Map.of("role", "system", "content", "당신은 정확하고 실용적인 시니어 백엔드 코드 리뷰어이다."),
-                Map.of("role", "user", "content", prompt)
+        ChatRequest requestBody = new ChatRequest(
+            openAiProperties.model(),
+            List.of(
+                new Message("system", "당신은 정확하고 실용적인 시니어 백엔드 코드 리뷰어이다."),
+                new Message("user", prompt)
             ),
-            "temperature", 0.2
+            openAiProperties.temperature()
         );
 
         JsonNode response = restClient.post()

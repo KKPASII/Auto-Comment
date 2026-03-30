@@ -12,3 +12,4 @@ github:
   api-url: https://api.github.com
   base-url: https://github.com/
   review-branch: auto-comment-logs
+  temperature: 0.2
