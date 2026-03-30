@@ -2,6 +2,8 @@ package com.hamplz.autocomment.service;
 
 import com.hamplz.autocomment.ReviewFileFormatter;
 import com.hamplz.autocomment.config.GithubProperties;
+import com.hamplz.autocomment.dto.GithubFileRequest;
+import com.hamplz.autocomment.dto.GithubRequestFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -61,10 +63,10 @@ public class GithubFileService {
         String encoded = Base64.getEncoder()
             .encodeToString(markdown.getBytes(StandardCharsets.UTF_8));
 
-        Map<String, Object> body = Map.of(
-            "message", "docs: add review history for PR #" + prNumber,
-            "content", encoded,
-            "branch", githubProperties.reviewBranch()
+        GithubFileRequest request = GithubRequestFactory.createHistoryFile(
+            prNumber,
+            encoded,
+            githubProperties.reviewBranch()
         );
 
         restClient.put()
@@ -72,7 +74,7 @@ public class GithubFileService {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
             .header(HttpHeaders.ACCEPT, "application/vnd.github+json")
             .contentType(MediaType.APPLICATION_JSON)
-            .body(body)
+            .body(request)
             .retrieve()
             .toBodilessEntity();
 
@@ -88,22 +90,20 @@ public class GithubFileService {
         String encoded = Base64.getEncoder()
             .encodeToString(content.getBytes(StandardCharsets.UTF_8));
 
-        Map<String, Object> body;
+        GithubFileRequest request;
 
         if (sha == null) {
-            // 신규 생성
-            body = Map.of(
-                "message", "docs: create latest review for PR #" + prNumber,
-                "content", encoded,
-                "branch", githubProperties.reviewBranch()
+            request = GithubRequestFactory.createNewLatestFile(
+                prNumber,
+                encoded,
+                githubProperties.reviewBranch()
             );
         } else {
-            // 덮어쓰기
-            body = Map.of(
-                "message", "docs: update latest review for PR #" + prNumber,
-                "content", encoded,
-                "branch", githubProperties.reviewBranch(),
-                "sha", sha
+            request = GithubRequestFactory.updateLatestFile(
+                prNumber,
+                encoded,
+                githubProperties.reviewBranch(),
+                sha
             );
         }
 
@@ -112,7 +112,7 @@ public class GithubFileService {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
             .header(HttpHeaders.ACCEPT, "application/vnd.github+json")
             .contentType(MediaType.APPLICATION_JSON)
-            .body(body)
+            .body(request)
             .retrieve()
             .toBodilessEntity();
 
