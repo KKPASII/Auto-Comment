@@ -2,6 +2,7 @@ package com.hamplz.autocomment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hamplz.autocomment.dto.PullRequestWebhook;
+import com.hamplz.autocomment.service.AsyncReviewService;
 import com.hamplz.autocomment.service.PullRequestReviewService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,11 +18,13 @@ public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
 
+    private final AsyncReviewService asyncReviewService;
     private final WebhookPayloadParser webhookPayloadParser;
     private final WebhookEventFilter webhookEventFilter;
     private final PullRequestReviewService pullRequestReviewService;
 
-    public WebhookController(WebhookPayloadParser webhookPayloadParser, WebhookEventFilter webhookEventFilter, PullRequestReviewService pullRequestReviewService) {
+    public WebhookController(AsyncReviewService asyncReviewService, WebhookPayloadParser webhookPayloadParser, WebhookEventFilter webhookEventFilter, PullRequestReviewService pullRequestReviewService) {
+        this.asyncReviewService = asyncReviewService;
         this.webhookPayloadParser = webhookPayloadParser;
         this.webhookEventFilter = webhookEventFilter;
         this.pullRequestReviewService = pullRequestReviewService;
@@ -37,10 +40,14 @@ public class WebhookController {
             log.info("리뷰 대상이 아니므로 종료합니다.");
             return ResponseEntity.ok("ignored");
         }
-        log.info("리뷰 대상 PR 이벤트입니다.");
 
-        pullRequestReviewService.review(parsedWebhook);
+        log.info("webhook 수신 - {} PR #{}",
+            parsedWebhook.repoFullName(),
+            parsedWebhook.prNumber()
+        );
 
-        return ResponseEntity.ok("OK!: GitHub Webhook Received");
+        asyncReviewService.reviewAsync(parsedWebhook);
+
+        return ResponseEntity.accepted().body("Accepted");
     }
 }
