@@ -1,9 +1,9 @@
-package com.hamplz.autocomment.service;
+package com.hamplz.autocomment.openai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hamplz.autocomment.config.OpenAiProperties;
-import com.hamplz.autocomment.dto.ChatRequest;
-import com.hamplz.autocomment.dto.Message;
+import com.hamplz.autocomment.openai.dto.ChatRequest;
+import com.hamplz.autocomment.openai.dto.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class GptReviewService {

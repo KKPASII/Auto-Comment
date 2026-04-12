@@ -1,6 +1,8 @@
-package com.hamplz.autocomment.service;
+package com.hamplz.autocomment.review.service;
 
-import com.hamplz.autocomment.dto.PullRequestWebhook;
+import com.hamplz.autocomment.github.service.GithubDiffService;
+import com.hamplz.autocomment.openai.GptReviewService;
+import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

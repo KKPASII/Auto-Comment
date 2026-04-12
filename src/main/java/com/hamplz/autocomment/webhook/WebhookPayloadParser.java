@@ -1,8 +1,8 @@
-package com.hamplz.autocomment;
+package com.hamplz.autocomment.webhook;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.hamplz.autocomment.dto.PullRequestAction;
-import com.hamplz.autocomment.dto.PullRequestWebhook;
+import com.hamplz.autocomment.webhook.dto.PullRequestAction;
+import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

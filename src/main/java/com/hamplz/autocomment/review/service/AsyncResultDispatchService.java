@@ -1,5 +1,7 @@
-package com.hamplz.autocomment.service;
+package com.hamplz.autocomment.review.service;
 
+import com.hamplz.autocomment.github.service.GithubCommentService;
+import com.hamplz.autocomment.github.service.GithubFileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;

@@ -1,4 +1,4 @@
-package com.hamplz.autocomment;
+package com.hamplz.autocomment.review;
 
 import org.springframework.stereotype.Component;
 

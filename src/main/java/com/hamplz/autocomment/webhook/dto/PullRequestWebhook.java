@@ -1,4 +1,4 @@
-package com.hamplz.autocomment.dto;
+package com.hamplz.autocomment.webhook.dto;
 
 public record PullRequestWebhook(
     PullRequestAction action,

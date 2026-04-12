@@ -1,4 +1,4 @@
-package com.hamplz.autocomment.dto;
+package com.hamplz.autocomment.openai.dto;
 
 import java.util.List;
 

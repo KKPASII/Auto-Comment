@@ -1,4 +1,4 @@
-package com.hamplz.autocomment.dto;
+package com.hamplz.autocomment.github.dto;
 
 public record GithubFileRequest(
     String message,

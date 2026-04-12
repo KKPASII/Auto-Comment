@@ -1,9 +1,9 @@
-package com.hamplz.autocomment.service;
+package com.hamplz.autocomment.github.service;
 
-import com.hamplz.autocomment.ReviewFileFormatter;
+import com.hamplz.autocomment.review.ReviewFileFormatter;
 import com.hamplz.autocomment.config.GithubProperties;
-import com.hamplz.autocomment.dto.GithubFileRequest;
-import com.hamplz.autocomment.dto.GithubRequestFactory;
+import com.hamplz.autocomment.github.dto.GithubFileRequest;
+import com.hamplz.autocomment.github.dto.GithubRequestFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;

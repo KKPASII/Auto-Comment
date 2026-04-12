@@ -1,4 +1,4 @@
-package com.hamplz.autocomment.service;
+package com.hamplz.autocomment.github.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

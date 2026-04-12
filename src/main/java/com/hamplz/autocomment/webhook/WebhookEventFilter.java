@@ -1,8 +1,8 @@
-package com.hamplz.autocomment;
+package com.hamplz.autocomment.webhook;
 
 import com.hamplz.autocomment.config.GithubProperties;
-import com.hamplz.autocomment.dto.PullRequestAction;
-import com.hamplz.autocomment.dto.PullRequestWebhook;
+import com.hamplz.autocomment.webhook.dto.PullRequestAction;
+import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.springframework.stereotype.Component;
 
 @Component
