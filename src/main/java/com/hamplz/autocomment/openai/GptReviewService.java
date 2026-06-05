@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.hamplz.autocomment.config.OpenAiProperties;
 import com.hamplz.autocomment.openai.dto.ChatRequest;
 import com.hamplz.autocomment.openai.dto.Message;
+import com.hamplz.autocomment.support.ExternalApiRetryExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +14,8 @@ import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
+import static com.hamplz.autocomment.support.ExternalApiOperation.OPENAI_GENERATE_REVIEW;
+
 @Service
 public class GptReviewService {
 
@@ -20,10 +23,16 @@ public class GptReviewService {
 
     private final RestClient restClient;
     private final OpenAiProperties openAiProperties;
+    private final ExternalApiRetryExecutor retryExecutor;
 
-    public GptReviewService(RestClient.Builder restClientBuilder, OpenAiProperties openAiProperties) {
+    public GptReviewService(
+        RestClient.Builder restClientBuilder,
+        OpenAiProperties openAiProperties,
+        ExternalApiRetryExecutor retryExecutor
+    ) {
         this.restClient = restClientBuilder.build();
         this.openAiProperties = openAiProperties;
+        this.retryExecutor = retryExecutor;
     }
 
     private void validateOpenAiProperties() {
@@ -54,13 +63,14 @@ public class GptReviewService {
             openAiProperties.temperature()
         );
 
-        JsonNode response = restClient.post()
+        JsonNode response = retryExecutor.execute(OPENAI_GENERATE_REVIEW, () -> restClient.post()
             .uri(openAiProperties.apiUrl())
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + openAiProperties.apiKey())
             .contentType(MediaType.APPLICATION_JSON)
             .body(requestBody)
             .retrieve()
-            .body(JsonNode.class);
+            .body(JsonNode.class)
+        );
 
         String review = response.path("choices")
             .get(0)

@@ -1,6 +1,7 @@
 package com.hamplz.autocomment.github.service;
 
 import com.hamplz.autocomment.config.GithubProperties;
+import com.hamplz.autocomment.support.ExternalApiRetryExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -10,6 +11,8 @@ import org.springframework.web.client.RestClient;
 
 import java.util.Map;
 
+import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CREATE_COMMENT;
+
 @Service
 public class GithubCommentService {
 
@@ -17,10 +20,16 @@ public class GithubCommentService {
 
     private final RestClient restClient;
     private final GithubProperties githubProperties;
+    private final ExternalApiRetryExecutor retryExecutor;
 
-    public GithubCommentService(RestClient.Builder restClientBuilder, GithubProperties githubProperties) {
+    public GithubCommentService(
+        RestClient.Builder restClientBuilder,
+        GithubProperties githubProperties,
+        ExternalApiRetryExecutor retryExecutor
+    ) {
         this.restClient = restClientBuilder.build();
         this.githubProperties = githubProperties;
+        this.retryExecutor = retryExecutor;
     }
 
     public void createComment(String repoFullName,int prNumber, String commentBody) {
@@ -35,14 +44,15 @@ public class GithubCommentService {
 
         log.info("GitHub PR 댓글 등록 시작: repo={}, prNumber={}", repoFullName, prNumber);
 
-        restClient.post()
+        retryExecutor.execute(GITHUB_CREATE_COMMENT, () -> restClient.post()
             .uri(url)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
             .header(HttpHeaders.ACCEPT, "application/vnd.github+json")
             .contentType(MediaType.APPLICATION_JSON)
             .body(Map.of("body", commentBody))
             .retrieve()
-            .toBodilessEntity();
+            .toBodilessEntity()
+        );
 
         log.info("GitHub PR 댓글 등록 완료");
     }

@@ -4,6 +4,7 @@ import com.hamplz.autocomment.review.ReviewFileFormatter;
 import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.github.dto.GithubFileRequest;
 import com.hamplz.autocomment.github.dto.GithubRequestFactory;
+import com.hamplz.autocomment.support.ExternalApiRetryExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -18,6 +19,13 @@ import java.time.LocalTime;
 import java.util.Base64;
 import java.util.Map;
 
+import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CHECK_REVIEW_BRANCH;
+import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CREATE_REVIEW_BRANCH;
+import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_GET_BASE_BRANCH_SHA;
+import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_GET_REVIEW_FILE_SHA;
+import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_SAVE_REVIEW_HISTORY_FILE;
+import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_SAVE_REVIEW_LATEST_FILE;
+
 @Service
 public class GithubFileService {
 
@@ -26,11 +34,18 @@ public class GithubFileService {
     private final RestClient restClient;
     private final GithubProperties githubProperties;
     private final ReviewFileFormatter reviewFileFormatter;
+    private final ExternalApiRetryExecutor retryExecutor;
 
-    public GithubFileService(RestClient.Builder restClientBuilder, GithubProperties githubProperties, ReviewFileFormatter reviewFileFormatter) {
+    public GithubFileService(
+        RestClient.Builder restClientBuilder,
+        GithubProperties githubProperties,
+        ReviewFileFormatter reviewFileFormatter,
+        ExternalApiRetryExecutor retryExecutor
+    ) {
         this.restClient = restClientBuilder.build();
         this.githubProperties = githubProperties;
         this.reviewFileFormatter = reviewFileFormatter;
+        this.retryExecutor = retryExecutor;
     }
 
     public void saveReviewFile(String repoFullName,
@@ -69,14 +84,15 @@ public class GithubFileService {
             githubProperties.reviewBranch()
         );
 
-        restClient.put()
+        retryExecutor.execute(GITHUB_SAVE_REVIEW_HISTORY_FILE, () -> restClient.put()
             .uri(githubProperties.apiUrl() + "/repos/" + repoFullName + "/contents/" + path)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
             .header(HttpHeaders.ACCEPT, "application/vnd.github+json")
             .contentType(MediaType.APPLICATION_JSON)
             .body(request)
             .retrieve()
-            .toBodilessEntity();
+            .toBodilessEntity()
+        );
 
         log.info("히스토리 파일 저장 완료: {}", path);
     }
@@ -107,28 +123,30 @@ public class GithubFileService {
             );
         }
 
-        restClient.put()
+        retryExecutor.execute(GITHUB_SAVE_REVIEW_LATEST_FILE, () -> restClient.put()
             .uri(githubProperties.apiUrl() + "/repos/" + repoFullName + "/contents/" + path)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
             .header(HttpHeaders.ACCEPT, "application/vnd.github+json")
             .contentType(MediaType.APPLICATION_JSON)
             .body(request)
             .retrieve()
-            .toBodilessEntity();
+            .toBodilessEntity()
+        );
 
         log.info("latest.md 저장 완료");
     }
 
     private String getFileSha(String repoFullName, String path, String branch) {
         try {
-            Map response = restClient.get()
+            Map response = retryExecutor.execute(GITHUB_GET_REVIEW_FILE_SHA, () -> restClient.get()
                 .uri(githubProperties.apiUrl()
                     + "/repos/" + repoFullName
                     + "/contents/" + path
                     + "?ref=" + branch)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
                 .retrieve()
-                .body(Map.class);
+                .body(Map.class)
+            );
 
             return (String) response.get("sha");
 
@@ -139,11 +157,12 @@ public class GithubFileService {
 
     private void ensureBranchExists(String repoFullName, String branch) {
         try {
-            restClient.get()
+            retryExecutor.execute(GITHUB_CHECK_REVIEW_BRANCH, () -> restClient.get()
                 .uri(githubProperties.apiUrl() + "/repos/" + repoFullName + "/branches/" + branch)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
                 .retrieve()
-                .toBodilessEntity();
+                .toBodilessEntity()
+            );
 
             log.info("브랜치 이미 존재: {}", branch);
 
@@ -158,25 +177,27 @@ public class GithubFileService {
                 "sha", baseSha
             );
 
-            restClient.post()
+            retryExecutor.execute(GITHUB_CREATE_REVIEW_BRANCH, () -> restClient.post()
                 .uri(githubProperties.apiUrl() + "/repos/" + repoFullName + "/git/refs")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
                 .header(HttpHeaders.ACCEPT, "application/vnd.github+json")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()
-                .toBodilessEntity();
+                .toBodilessEntity()
+            );
 
             log.info("브랜치 생성 완료: {}", branch);
         }
     }
 
     private String getBaseBranchSha(String repoFullName, String baseBranch) {
-        var response = restClient.get()
+        var response = retryExecutor.execute(GITHUB_GET_BASE_BRANCH_SHA, () -> restClient.get()
             .uri(githubProperties.apiUrl() + "/repos/" + repoFullName + "/git/ref/heads/" + baseBranch)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + githubProperties.token())
             .retrieve()
-            .body(Map.class);
+            .body(Map.class)
+        );
 
         Map object = (Map) response.get("object");
         return (String) object.get("sha");
