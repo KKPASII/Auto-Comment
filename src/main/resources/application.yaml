@@ -11,14 +11,19 @@ http:
     connect-timeout: 3s
     read-timeout: 30s
 
+external-api:
+  retry:
+    max-attempts: 3
+    backoff: 1s
+
 openai:
   api-key: ${OPENAI_API_KEY}
   api-url: https://api.openai.com/v1/chat/completions
   model: gpt-4o-mini
+  temperature: 0.2
 
 github:
   token: ${GITHUB_TOKEN}
   api-url: https://api.github.com
   base-url: https://github.com/
   review-branch: auto-comment-logs
-  temperature: 0.2
