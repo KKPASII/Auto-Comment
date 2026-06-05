@@ -21,13 +21,11 @@ public class WebhookController {
     private final AsyncReviewService asyncReviewService;
     private final WebhookPayloadParser webhookPayloadParser;
     private final WebhookEventFilter webhookEventFilter;
-    private final PullRequestReviewService pullRequestReviewService;
 
-    public WebhookController(AsyncReviewService asyncReviewService, WebhookPayloadParser webhookPayloadParser, WebhookEventFilter webhookEventFilter, PullRequestReviewService pullRequestReviewService) {
+    public WebhookController(AsyncReviewService asyncReviewService, WebhookPayloadParser webhookPayloadParser, WebhookEventFilter webhookEventFilter) {
         this.asyncReviewService = asyncReviewService;
         this.webhookPayloadParser = webhookPayloadParser;
         this.webhookEventFilter = webhookEventFilter;
-        this.pullRequestReviewService = pullRequestReviewService;
     }
 
     @PostMapping("/github")
