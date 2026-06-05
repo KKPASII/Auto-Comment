@@ -7,6 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Component
 public class WebhookPayloadParser {
 
@@ -24,7 +27,9 @@ public class WebhookPayloadParser {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of(),
+                getChangedLabel(webhookPayload)
             );
         }
 
@@ -32,6 +37,8 @@ public class WebhookPayloadParser {
         String diffUrl = pr.path("diff_url").asText();
         String headRef = pr.path("head").path("ref").asText();
         String repoFullName = webhookPayload.path("repository").path("full_name").asText();
+        List<String> labels = getLabels(pr);
+        String changedLabel = getChangedLabel(webhookPayload);
 
         log.info("action = {}", action);
         log.info("prNumber = {}", prNumber);
@@ -39,6 +46,7 @@ public class WebhookPayloadParser {
         log.info("repoFullName = {}", repoFullName);
         log.info("diffUrl = {}", diffUrl);
         log.info("headRef = {}", headRef);
+        log.info("changedLabel = {}", changedLabel);
 
         return new PullRequestWebhook(
             action,
@@ -46,7 +54,30 @@ public class WebhookPayloadParser {
             title,
             diffUrl,
             headRef,
-            repoFullName
+            repoFullName,
+            labels,
+            changedLabel
         );
+    }
+
+    private List<String> getLabels(JsonNode pullRequest) {
+        JsonNode labelsNode = pullRequest.path("labels");
+        if (!labelsNode.isArray()) {
+            return List.of();
+        }
+
+        List<String> labels = new ArrayList<>();
+        for (JsonNode labelNode : labelsNode) {
+            String label = labelNode.path("name").asText();
+            if (!label.isBlank()) {
+                labels.add(label);
+            }
+        }
+        return labels;
+    }
+
+    private String getChangedLabel(JsonNode webhookPayload) {
+        String changedLabel = webhookPayload.path("label").path("name").asText();
+        return changedLabel.isBlank() ? null : changedLabel;
     }
 }

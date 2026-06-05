@@ -4,26 +4,21 @@ import java.util.Arrays;
 
 public enum PullRequestAction {
 
-    OPENED("opened", true),
-    SYNCHRONIZE("synchronize", true),
-    REOPENED("reopened", true),
-    CLOSED("closed", false),
-    UNKNOWN("unknown", false);
+    OPENED("opened"),
+    SYNCHRONIZE("synchronize"),
+    REOPENED("reopened"),
+    LABELED("labeled"),
+    CLOSED("closed"),
+    UNKNOWN("unknown");
 
     private final String action;
-    private final boolean reviewTarget;
 
-    PullRequestAction(String action, boolean reviewTarget) {
+    PullRequestAction(String action) {
         this.action = action;
-        this.reviewTarget = reviewTarget;
     }
 
     public String getAction() {
         return action;
-    }
-
-    public boolean isReviewTarget() {
-        return reviewTarget;
     }
 
     public static PullRequestAction from(String action) {

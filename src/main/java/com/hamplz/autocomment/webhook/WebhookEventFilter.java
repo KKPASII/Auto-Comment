@@ -1,12 +1,13 @@
 package com.hamplz.autocomment.webhook;
 
 import com.hamplz.autocomment.config.GithubProperties;
-import com.hamplz.autocomment.webhook.dto.PullRequestAction;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.springframework.stereotype.Component;
 
 @Component
 public class WebhookEventFilter {
+    private static final String REVIEW_TRIGGER_LABEL = "ai-review:on";
+
     private final GithubProperties githubProperties;
 
     public WebhookEventFilter(GithubProperties githubProperties) {
@@ -25,8 +26,12 @@ public class WebhookEventFilter {
             return false;
         }
 
-        PullRequestAction action = parsedWebhook.action();
+        // Check if the review trigger label was added.
+        String changedLabel = parsedWebhook.changedLabel();
+        if (changedLabel == null || changedLabel.isBlank()) {
+            return false;
+        }
 
-        return action != null && action.isReviewTarget();
+        return REVIEW_TRIGGER_LABEL.equals(changedLabel);
     }
 }
