@@ -1,6 +1,10 @@
 spring:
   application:
     name: autocomment
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 openai:
   api-key: ${OPENAI_API_KEY}
