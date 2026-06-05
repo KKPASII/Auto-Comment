@@ -3,6 +3,7 @@ package com.hamplz.autocomment;
 import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.review.service.AsyncReviewService;
 import com.hamplz.autocomment.review.service.PullRequestReviewService;
+import com.hamplz.autocomment.webhook.GitHubWebhookSignatureVerifier;
 import com.hamplz.autocomment.webhook.WebhookController;
 import com.hamplz.autocomment.webhook.WebhookEventFilter;
 import com.hamplz.autocomment.webhook.WebhookPayloadParser;
@@ -16,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -39,11 +41,15 @@ class WebhookControllerTest {
     private GithubProperties githubProperties;
 
     @MockitoBean
+    private GitHubWebhookSignatureVerifier signatureVerifier;
+
+    @MockitoBean
     private PullRequestReviewService pullRequestReviewService;
 
     @BeforeEach
     void setUp() {
         given(githubProperties.reviewBranch()).willReturn("auto-comment-logs");
+        given(signatureVerifier.isValid(anyString(), org.mockito.ArgumentMatchers.isNull())).willReturn(true);
     }
 
     @Test

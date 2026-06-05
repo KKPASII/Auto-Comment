@@ -24,6 +24,7 @@ openai:
 
 github:
   token: ${GITHUB_TOKEN}
+  webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
   api-url: https://api.github.com
   base-url: https://github.com/
   review-branch: auto-comment-logs
