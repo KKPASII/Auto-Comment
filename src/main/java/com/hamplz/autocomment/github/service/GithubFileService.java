@@ -1,12 +1,14 @@
 package com.hamplz.autocomment.github.service;
 
-import com.hamplz.autocomment.review.ReviewFileFormatter;
+import com.hamplz.autocomment.config.AsyncConfig;
 import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.github.dto.GithubFileRequest;
 import com.hamplz.autocomment.github.dto.GithubRequestFactory;
+import com.hamplz.autocomment.review.ReviewFileFormatter;
 import com.hamplz.autocomment.support.ExternalApiRetryExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Base64;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CHECK_REVIEW_BRANCH;
 import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CREATE_REVIEW_BRANCH;
@@ -35,17 +39,20 @@ public class GithubFileService {
     private final GithubProperties githubProperties;
     private final ReviewFileFormatter reviewFileFormatter;
     private final ExternalApiRetryExecutor retryExecutor;
+    private final Executor fileTaskExecutor;
 
     public GithubFileService(
         RestClient.Builder restClientBuilder,
         GithubProperties githubProperties,
         ReviewFileFormatter reviewFileFormatter,
-        ExternalApiRetryExecutor retryExecutor
+        ExternalApiRetryExecutor retryExecutor,
+        @Qualifier(AsyncConfig.FILE_TASK_EXECUTOR) Executor fileTaskExecutor
     ) {
         this.restClient = restClientBuilder.build();
         this.githubProperties = githubProperties;
         this.reviewFileFormatter = reviewFileFormatter;
         this.retryExecutor = retryExecutor;
+        this.fileTaskExecutor = fileTaskExecutor;
     }
 
     public void saveReviewFile(String repoFullName,
@@ -66,9 +73,17 @@ public class GithubFileService {
             reviewComment
         );
 
-        saveHistoryFile(repoFullName, prNumber, markdownContent);
+        CompletableFuture<Void> historyFuture = CompletableFuture.runAsync(
+            () -> saveHistoryFile(repoFullName, prNumber, markdownContent),
+            fileTaskExecutor
+        );
 
-        saveLatestFile(repoFullName, prNumber, markdownContent);
+        CompletableFuture<Void> latestFuture = CompletableFuture.runAsync(
+            () -> saveLatestFile(repoFullName, prNumber, markdownContent),
+            fileTaskExecutor
+        );
+
+        CompletableFuture.allOf(historyFuture, latestFuture).join();
     }
 
     private void saveHistoryFile(String repoFullName, int prNumber, String markdown) {
