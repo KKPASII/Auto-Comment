@@ -28,6 +28,7 @@ public class WebhookPayloadParser {
                 null,
                 null,
                 null,
+                null,
                 List.of(),
                 getChangedLabel(webhookPayload)
             );
@@ -36,6 +37,7 @@ public class WebhookPayloadParser {
         String title = pr.path("title").asText();
         String diffUrl = pr.path("diff_url").asText();
         String headRef = pr.path("head").path("ref").asText();
+        String headSha = pr.path("head").path("sha").asText();
         String repoFullName = webhookPayload.path("repository").path("full_name").asText();
         List<String> labels = getLabels(pr);
         String changedLabel = getChangedLabel(webhookPayload);
@@ -46,6 +48,7 @@ public class WebhookPayloadParser {
         log.info("repoFullName = {}", repoFullName);
         log.info("diffUrl = {}", diffUrl);
         log.info("headRef = {}", headRef);
+        log.info("headSha = {}", headSha);
         log.info("changedLabel = {}", changedLabel);
 
         return new PullRequestWebhook(
@@ -54,6 +57,7 @@ public class WebhookPayloadParser {
             title,
             diffUrl,
             headRef,
+            headSha,
             repoFullName,
             labels,
             changedLabel

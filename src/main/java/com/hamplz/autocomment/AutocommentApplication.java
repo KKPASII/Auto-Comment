@@ -4,6 +4,7 @@ import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.config.HttpClientProperties;
 import com.hamplz.autocomment.config.OpenAiProperties;
 import com.hamplz.autocomment.config.RetryProperties;
+import com.hamplz.autocomment.config.ReviewDeduplicationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -15,7 +16,8 @@ import org.springframework.scheduling.annotation.EnableAsync;
 	OpenAiProperties.class,
 	GithubProperties.class,
 	HttpClientProperties.class,
-	RetryProperties.class
+	RetryProperties.class,
+	ReviewDeduplicationProperties.class
 })
 public class AutocommentApplication {
 

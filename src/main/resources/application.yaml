@@ -16,6 +16,10 @@ external-api:
     max-attempts: 3
     backoff: 1s
 
+review:
+  deduplication:
+    ttl: 1h
+
 openai:
   api-key: ${OPENAI_API_KEY}
   api-url: https://api.openai.com/v1/chat/completions

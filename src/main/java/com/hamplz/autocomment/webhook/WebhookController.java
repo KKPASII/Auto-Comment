@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hamplz.autocomment.review.service.AsyncReviewService;
+import com.hamplz.autocomment.review.service.ReviewRequestDeduplicationService;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +24,7 @@ public class WebhookController {
     private static final String RESPONSE_INVALID_SIGNATURE = "invalid signature";
     private static final String RESPONSE_INVALID_PAYLOAD = "invalid payload";
     private static final String RESPONSE_IGNORED = "ignored";
+    private static final String RESPONSE_DUPLICATED = "duplicated";
     private static final String RESPONSE_ACCEPTED = "Accepted";
 
     private final ObjectMapper objectMapper;
@@ -30,19 +32,22 @@ public class WebhookController {
     private final WebhookPayloadParser webhookPayloadParser;
     private final WebhookEventFilter webhookEventFilter;
     private final GitHubWebhookSignatureVerifier signatureVerifier;
+    private final ReviewRequestDeduplicationService reviewRequestDeduplicationService;
 
     public WebhookController(
         ObjectMapper objectMapper,
         AsyncReviewService asyncReviewService,
         WebhookPayloadParser webhookPayloadParser,
         WebhookEventFilter webhookEventFilter,
-        GitHubWebhookSignatureVerifier signatureVerifier
+        GitHubWebhookSignatureVerifier signatureVerifier,
+        ReviewRequestDeduplicationService reviewRequestDeduplicationService
     ) {
         this.objectMapper = objectMapper;
         this.asyncReviewService = asyncReviewService;
         this.webhookPayloadParser = webhookPayloadParser;
         this.webhookEventFilter = webhookEventFilter;
         this.signatureVerifier = signatureVerifier;
+        this.reviewRequestDeduplicationService = reviewRequestDeduplicationService;
     }
 
     @PostMapping("/github")
@@ -77,6 +82,14 @@ public class WebhookController {
             parsedWebhook.repoFullName(),
             parsedWebhook.prNumber()
         );
+
+        if (!reviewRequestDeduplicationService.tryStart(parsedWebhook)) {
+            log.info("Duplicated review request ignored - {} PR #{}",
+                parsedWebhook.repoFullName(),
+                parsedWebhook.prNumber()
+            );
+            return ResponseEntity.ok(RESPONSE_DUPLICATED);
+        }
 
         asyncReviewService.reviewAsync(parsedWebhook);
 

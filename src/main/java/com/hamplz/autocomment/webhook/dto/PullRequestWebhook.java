@@ -8,6 +8,7 @@ public record PullRequestWebhook(
     String title,
     String diffUrl,
     String headRef,
+    String headSha,
     String repoFullName,
     List<String> labels,
     String changedLabel

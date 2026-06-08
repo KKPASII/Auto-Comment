@@ -3,6 +3,7 @@ package com.hamplz.autocomment;
 import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.review.service.AsyncReviewService;
 import com.hamplz.autocomment.review.service.PullRequestReviewService;
+import com.hamplz.autocomment.review.service.ReviewRequestDeduplicationService;
 import com.hamplz.autocomment.webhook.GitHubWebhookSignatureVerifier;
 import com.hamplz.autocomment.webhook.WebhookController;
 import com.hamplz.autocomment.webhook.WebhookEventFilter;
@@ -44,12 +45,16 @@ class WebhookControllerTest {
     private GitHubWebhookSignatureVerifier signatureVerifier;
 
     @MockitoBean
+    private ReviewRequestDeduplicationService reviewRequestDeduplicationService;
+
+    @MockitoBean
     private PullRequestReviewService pullRequestReviewService;
 
     @BeforeEach
     void setUp() {
         given(githubProperties.reviewBranch()).willReturn("auto-comment-logs");
         given(signatureVerifier.isValid(anyString(), org.mockito.ArgumentMatchers.isNull())).willReturn(true);
+        given(reviewRequestDeduplicationService.tryStart(org.mockito.ArgumentMatchers.any())).willReturn(true);
     }
 
     @Test
@@ -98,7 +103,8 @@ class WebhookControllerTest {
                 "title": "feat: add webhook review flow",
                 "diff_url": "https://example.com/pull/21.diff",
                 "head": {
-                  "ref": "feature/webhook-review"
+                  "ref": "feature/webhook-review",
+                  "sha": "abc123"
                 },
                 "labels": [
                   { "name": "%s" }
@@ -122,8 +128,47 @@ class WebhookControllerTest {
         verify(asyncReviewService).reviewAsync(argThat(webhook ->
             webhook.prNumber() == 21
                 && "hamplz/auto-comment".equals(webhook.repoFullName())
+                && "abc123".equals(webhook.headSha())
                 && REVIEW_TRIGGER_LABEL.equals(webhook.changedLabel())
         ));
+    }
+
+    @Test
+    @DisplayName("ignores duplicated review request")
+    void ignoreDuplicatedReviewRequest() throws Exception {
+        given(reviewRequestDeduplicationService.tryStart(org.mockito.ArgumentMatchers.any())).willReturn(false);
+
+        String payload = """
+            {
+              "action": "labeled",
+              "number": 21,
+              "pull_request": {
+                "title": "feat: add webhook review flow",
+                "diff_url": "https://example.com/pull/21.diff",
+                "head": {
+                  "ref": "feature/webhook-review",
+                  "sha": "abc123"
+                },
+                "labels": [
+                  { "name": "%s" }
+                ]
+              },
+              "label": {
+                "name": "%s"
+              },
+              "repository": {
+                "full_name": "hamplz/auto-comment"
+              }
+            }
+            """.formatted(REVIEW_TRIGGER_LABEL, REVIEW_TRIGGER_LABEL);
+
+        mockMvc.perform(post("/webhook/github")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isOk())
+            .andExpect(content().string("duplicated"));
+
+        verifyNoInteractions(asyncReviewService);
     }
 
     @Test
