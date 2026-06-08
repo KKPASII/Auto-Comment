@@ -2,6 +2,7 @@ package com.hamplz.autocomment.review.service;
 
 import com.hamplz.autocomment.github.service.GithubCommentService;
 import com.hamplz.autocomment.github.service.GithubFileService;
+import com.hamplz.autocomment.review.dto.DispatchTaskResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -23,24 +24,24 @@ public class AsyncResultDispatchService {
     }
 
     @Async("dispatchTaskExecutor")
-    public CompletableFuture<Void> commentAsync(
+    public CompletableFuture<DispatchTaskResult> commentAsync(
         String repoFullName,
         int prNumber,
         String reviewComment
     ) {
         try {
-            log.info("코멘트 등록 시작 - {} PR #{}", repoFullName, prNumber);
+            log.info("댓글 등록 시작 - {} PR #{}", repoFullName, prNumber);
             githubCommentService.createComment(repoFullName, prNumber, reviewComment);
-            log.info("코멘트 등록 완료 - {} PR #{}", repoFullName, prNumber);
-            return CompletableFuture.completedFuture(null);
+            log.info("댓글 등록 완료 - {} PR #{}", repoFullName, prNumber);
+            return CompletableFuture.completedFuture(DispatchTaskResult.success());
         } catch (Exception e) {
-            log.error("코멘트 등록 실패 - {} PR #{}", repoFullName, prNumber);
-            return CompletableFuture.failedFuture(e);
+            log.error("댓글 등록 실패 - {} PR #{}", repoFullName, prNumber, e);
+            return CompletableFuture.completedFuture(DispatchTaskResult.failure(e));
         }
     }
 
     @Async("dispatchTaskExecutor")
-    public CompletableFuture<Void> saveReviewAsync(
+    public CompletableFuture<DispatchTaskResult> saveReviewAsync(
         String repoFullName,
         int prNumber,
         String title,
@@ -48,13 +49,13 @@ public class AsyncResultDispatchService {
         String reviewComment
     ) {
         try {
-            log.info("코멘트 등록 시작 - {} PR #{}", repoFullName, prNumber);
+            log.info("리뷰 파일 저장 시작 - {} PR #{}", repoFullName, prNumber);
             githubFileService.saveReviewFile(repoFullName, prNumber, title, action, reviewComment);
-            log.info("코멘트 등록 완료 - {} PR #{}", repoFullName, prNumber);
-            return CompletableFuture.completedFuture(null);
+            log.info("리뷰 파일 저장 완료 - {} PR #{}", repoFullName, prNumber);
+            return CompletableFuture.completedFuture(DispatchTaskResult.success());
         } catch(Exception e) {
-            log.error("코멘트 등록 실패 - {} PR #{}", repoFullName, prNumber);
-            return CompletableFuture.failedFuture(e);
+            log.error("리뷰 파일 저장 실패 - {} PR #{}", repoFullName, prNumber, e);
+            return CompletableFuture.completedFuture(DispatchTaskResult.failure(e));
         }
     }
 }

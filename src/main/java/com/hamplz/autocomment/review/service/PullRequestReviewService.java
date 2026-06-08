@@ -2,12 +2,11 @@ package com.hamplz.autocomment.review.service;
 
 import com.hamplz.autocomment.github.service.GithubDiffService;
 import com.hamplz.autocomment.openai.GptReviewService;
+import com.hamplz.autocomment.review.dto.DispatchResult;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
-import java.util.concurrent.CompletableFuture;
 
 @Service
 public class PullRequestReviewService {
@@ -33,14 +32,14 @@ public class PullRequestReviewService {
         String reviewComment = gptReviewService.generateReview(diffContent);
         log.info("\n==== GPT REVIEW START ====\n{}\n==== GPT REVIEW END ====\n", reviewComment);
 
-        CompletableFuture<Void> commentFuture =
+        var commentFuture =
             asyncResultDispatchService.commentAsync(
                 webhook.repoFullName(),
                 webhook.prNumber(),
                 reviewComment
             );
 
-        CompletableFuture<Void> saveReviewFuture =
+        var saveReviewFuture =
             asyncResultDispatchService.saveReviewAsync(
                 webhook.repoFullName(),
                 webhook.prNumber(),
@@ -49,7 +48,18 @@ public class PullRequestReviewService {
                 reviewComment
             );
 
-        CompletableFuture.allOf(commentFuture, saveReviewFuture).join();
+        DispatchResult dispatchResult = new DispatchResult(
+            commentFuture.join(),
+            saveReviewFuture.join()
+        );
+
+        if (!dispatchResult.isFullySucceeded()) {
+            log.warn("리뷰 결과 처리 일부 실패 - {} PR #{} {}",
+                webhook.repoFullName(),
+                webhook.prNumber(),
+                dispatchResult.summary()
+            );
+        }
 
         log.info("리뷰 완료 - {} PR #{}", webhook.repoFullName(), webhook.prNumber());
     }
