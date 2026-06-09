@@ -1,5 +1,6 @@
 package com.hamplz.autocomment.review.service;
 
+import com.hamplz.autocomment.config.ReviewQueueProperties;
 import com.hamplz.autocomment.review.dto.QueuedReviewJob;
 import jakarta.annotation.PostConstruct;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -7,7 +8,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "review.queue.worker-enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(
+    name = ReviewQueueProperties.WORKER_ENABLED_PROPERTY,
+    havingValue = ReviewQueueProperties.WORKER_ENABLED_VALUE,
+    matchIfMissing = true
+)
 public class ReviewJobWorker {
 
     private final ReviewJobQueueService reviewJobQueueService;
@@ -26,7 +31,7 @@ public class ReviewJobWorker {
         reviewJobQueueService.restoreProcessingJobs();
     }
 
-    @Scheduled(fixedDelayString = "${review.queue.poll-delay:1000}")
+    @Scheduled(fixedDelayString = ReviewQueueProperties.POLL_DELAY_PLACEHOLDER)
     public void poll() {
         reviewJobQueueService.claimNext().ifPresent(this::process);
     }
