@@ -24,6 +24,10 @@ public class AsyncReviewService {
 
     @Async("reviewTaskExecutor")
     public void reviewAsync(PullRequestWebhook parsedWebhook) {
+        review(parsedWebhook);
+    }
+
+    public void review(PullRequestWebhook parsedWebhook) {
         try {
             reviewJobStatusService.markRunning(parsedWebhook);
             log.info("비동기 리뷰 시작 - {} PR #{}", parsedWebhook.repoFullName(), parsedWebhook.prNumber());

@@ -21,6 +21,11 @@ review:
     ttl: 1h
   status:
     ttl: 1d
+  queue:
+    key: review:queue
+    processing-key: review:queue:processing
+    poll-delay: 1000
+    worker-enabled: true
 
 openai:
   api-key: ${OPENAI_API_KEY}

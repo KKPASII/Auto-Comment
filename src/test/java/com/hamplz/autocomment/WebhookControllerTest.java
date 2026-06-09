@@ -1,7 +1,7 @@
 package com.hamplz.autocomment;
 
 import com.hamplz.autocomment.config.GithubProperties;
-import com.hamplz.autocomment.review.service.AsyncReviewService;
+import com.hamplz.autocomment.review.service.ReviewJobQueueService;
 import com.hamplz.autocomment.review.service.PullRequestReviewService;
 import com.hamplz.autocomment.review.service.ReviewRequestDeduplicationService;
 import com.hamplz.autocomment.webhook.GitHubWebhookSignatureVerifier;
@@ -36,7 +36,7 @@ class WebhookControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private AsyncReviewService asyncReviewService;
+    private ReviewJobQueueService reviewJobQueueService;
 
     @MockitoBean
     private GithubProperties githubProperties;
@@ -89,7 +89,7 @@ class WebhookControllerTest {
             .andExpect(status().isOk())
             .andExpect(content().string("ignored"));
 
-        verifyNoInteractions(asyncReviewService);
+        verifyNoInteractions(reviewJobQueueService);
     }
 
     @Test
@@ -125,7 +125,7 @@ class WebhookControllerTest {
             .andExpect(status().isAccepted())
             .andExpect(content().string("Accepted"));
 
-        verify(asyncReviewService).reviewAsync(argThat(webhook ->
+        verify(reviewJobQueueService).enqueue(argThat(webhook ->
             webhook.prNumber() == 21
                 && "hamplz/auto-comment".equals(webhook.repoFullName())
                 && "abc123".equals(webhook.headSha())
@@ -168,7 +168,7 @@ class WebhookControllerTest {
             .andExpect(status().isOk())
             .andExpect(content().string("duplicated"));
 
-        verifyNoInteractions(asyncReviewService);
+        verifyNoInteractions(reviewJobQueueService);
     }
 
     @Test
@@ -197,6 +197,6 @@ class WebhookControllerTest {
             .andExpect(status().isOk())
             .andExpect(content().string("ignored"));
 
-        verifyNoInteractions(asyncReviewService);
+        verifyNoInteractions(reviewJobQueueService);
     }
 }

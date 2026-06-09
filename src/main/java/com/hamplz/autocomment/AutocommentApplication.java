@@ -5,13 +5,16 @@ import com.hamplz.autocomment.config.HttpClientProperties;
 import com.hamplz.autocomment.config.OpenAiProperties;
 import com.hamplz.autocomment.config.RetryProperties;
 import com.hamplz.autocomment.config.ReviewDeduplicationProperties;
+import com.hamplz.autocomment.config.ReviewQueueProperties;
 import com.hamplz.autocomment.config.ReviewStatusProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @EnableAsync
+@EnableScheduling
 @SpringBootApplication
 @EnableConfigurationProperties({
 	OpenAiProperties.class,
@@ -19,7 +22,8 @@ import org.springframework.scheduling.annotation.EnableAsync;
 	HttpClientProperties.class,
 	RetryProperties.class,
 	ReviewDeduplicationProperties.class,
-	ReviewStatusProperties.class
+	ReviewStatusProperties.class,
+	ReviewQueueProperties.class
 })
 public class AutocommentApplication {
 

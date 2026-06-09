@@ -3,7 +3,7 @@ package com.hamplz.autocomment.webhook;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hamplz.autocomment.review.service.AsyncReviewService;
+import com.hamplz.autocomment.review.service.ReviewJobQueueService;
 import com.hamplz.autocomment.review.service.ReviewRequestDeduplicationService;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.slf4j.Logger;
@@ -28,7 +28,7 @@ public class WebhookController {
     private static final String RESPONSE_ACCEPTED = "Accepted";
 
     private final ObjectMapper objectMapper;
-    private final AsyncReviewService asyncReviewService;
+    private final ReviewJobQueueService reviewJobQueueService;
     private final WebhookPayloadParser webhookPayloadParser;
     private final WebhookEventFilter webhookEventFilter;
     private final GitHubWebhookSignatureVerifier signatureVerifier;
@@ -36,14 +36,14 @@ public class WebhookController {
 
     public WebhookController(
         ObjectMapper objectMapper,
-        AsyncReviewService asyncReviewService,
+        ReviewJobQueueService reviewJobQueueService,
         WebhookPayloadParser webhookPayloadParser,
         WebhookEventFilter webhookEventFilter,
         GitHubWebhookSignatureVerifier signatureVerifier,
         ReviewRequestDeduplicationService reviewRequestDeduplicationService
     ) {
         this.objectMapper = objectMapper;
-        this.asyncReviewService = asyncReviewService;
+        this.reviewJobQueueService = reviewJobQueueService;
         this.webhookPayloadParser = webhookPayloadParser;
         this.webhookEventFilter = webhookEventFilter;
         this.signatureVerifier = signatureVerifier;
@@ -91,7 +91,7 @@ public class WebhookController {
             return ResponseEntity.ok(RESPONSE_DUPLICATED);
         }
 
-        asyncReviewService.reviewAsync(parsedWebhook);
+        reviewJobQueueService.enqueue(parsedWebhook);
 
         return ResponseEntity.accepted().body(RESPONSE_ACCEPTED);
     }
