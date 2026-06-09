@@ -10,6 +10,9 @@ import org.springframework.stereotype.Service;
 public class AsyncReviewService {
 
     private static final Logger log = LoggerFactory.getLogger(AsyncReviewService.class);
+    private static final String LOG_REVIEW_STARTED = "Review job started - {} PR #{}";
+    private static final String LOG_REVIEW_SUCCEEDED = "Review job succeeded - {} PR #{}";
+    private static final String LOG_REVIEW_FAILED = "Review job failed - {} PR #{}";
 
     private final PullRequestReviewService pullRequestReviewService;
     private final ReviewJobStatusService reviewJobStatusService;
@@ -30,13 +33,13 @@ public class AsyncReviewService {
     public void review(PullRequestWebhook parsedWebhook) {
         try {
             reviewJobStatusService.markRunning(parsedWebhook);
-            log.info("비동기 리뷰 시작 - {} PR #{}", parsedWebhook.repoFullName(), parsedWebhook.prNumber());
+            log.info(LOG_REVIEW_STARTED, parsedWebhook.repoFullName(), parsedWebhook.prNumber());
             pullRequestReviewService.review(parsedWebhook);
             reviewJobStatusService.markSuccess(parsedWebhook);
-            log.info("비동기 리뷰 완료 - {} PR #{}", parsedWebhook.repoFullName(), parsedWebhook.prNumber());
-        } catch(Exception e) {
+            log.info(LOG_REVIEW_SUCCEEDED, parsedWebhook.repoFullName(), parsedWebhook.prNumber());
+        } catch (Exception e) {
             reviewJobStatusService.markFailed(parsedWebhook, e);
-            log.error("비동기 리뷰 실패 - {} PR #{}", parsedWebhook.repoFullName(), parsedWebhook.prNumber(), e);
+            log.error(LOG_REVIEW_FAILED, parsedWebhook.repoFullName(), parsedWebhook.prNumber(), e);
         }
     }
 }

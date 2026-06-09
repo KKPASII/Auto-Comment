@@ -26,6 +26,12 @@ public class WebhookController {
     private static final String RESPONSE_IGNORED = "ignored";
     private static final String RESPONSE_DUPLICATED = "duplicated";
     private static final String RESPONSE_ACCEPTED = "Accepted";
+    private static final String LOG_WEBHOOK_RECEIVED = "GitHub webhook received";
+    private static final String LOG_INVALID_SIGNATURE = "GitHub webhook signature is invalid.";
+    private static final String LOG_INVALID_PAYLOAD = "GitHub webhook payload is invalid.";
+    private static final String LOG_IGNORED = "GitHub webhook ignored - {} PR #{}";
+    private static final String LOG_REVIEW_REQUEST_RECEIVED = "GitHub webhook review request received - {} PR #{}";
+    private static final String LOG_DUPLICATED_REVIEW_REQUEST = "Duplicated review request ignored - {} PR #{}";
 
     private final ObjectMapper objectMapper;
     private final ReviewJobQueueService reviewJobQueueService;
@@ -56,10 +62,10 @@ public class WebhookController {
         @RequestHeader(value = "X-Hub-Signature-256", required = false) String signatureHeader
     ) {
 
-        log.info("==== GitHub Webhook Received ====");
+        log.info(LOG_WEBHOOK_RECEIVED);
 
         if (!signatureVerifier.isValid(payload, signatureHeader)) {
-            log.info("GitHub webhook signature is invalid.");
+            log.info(LOG_INVALID_SIGNATURE);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(RESPONSE_INVALID_SIGNATURE);
         }
 
@@ -67,24 +73,24 @@ public class WebhookController {
         try {
             parsedPayload = objectMapper.readTree(payload);
         } catch (JsonProcessingException e) {
-            log.info("GitHub webhook payload is invalid.", e);
+            log.info(LOG_INVALID_PAYLOAD, e);
             return ResponseEntity.badRequest().body(RESPONSE_INVALID_PAYLOAD);
         }
 
         PullRequestWebhook parsedWebhook = webhookPayloadParser.parse(parsedPayload);
 
         if (!webhookEventFilter.isReviewTarget(parsedWebhook)) {
-            log.info("리뷰 대상이 아니므로 종료합니다.");
+            log.info(LOG_IGNORED, parsedWebhook.repoFullName(), parsedWebhook.prNumber());
             return ResponseEntity.ok(RESPONSE_IGNORED);
         }
 
-        log.info("webhook 수신 - {} PR #{}",
+        log.info(LOG_REVIEW_REQUEST_RECEIVED,
             parsedWebhook.repoFullName(),
             parsedWebhook.prNumber()
         );
 
         if (!reviewRequestDeduplicationService.tryStart(parsedWebhook)) {
-            log.info("Duplicated review request ignored - {} PR #{}",
+            log.info(LOG_DUPLICATED_REVIEW_REQUEST,
                 parsedWebhook.repoFullName(),
                 parsedWebhook.prNumber()
             );
