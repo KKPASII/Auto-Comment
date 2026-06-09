@@ -19,6 +19,8 @@ external-api:
 review:
   deduplication:
     ttl: 1h
+  status:
+    ttl: 1d
 
 openai:
   api-key: ${OPENAI_API_KEY}
