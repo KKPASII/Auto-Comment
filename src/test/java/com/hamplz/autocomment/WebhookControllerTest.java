@@ -172,6 +172,40 @@ class WebhookControllerTest {
     }
 
     @Test
+    @DisplayName("ignores ai-review label removal event")
+    void ignoreReviewLabelRemovalEvent() throws Exception {
+        String payload = """
+            {
+              "action": "unlabeled",
+              "number": 21,
+              "pull_request": {
+                "title": "feat: add webhook review flow",
+                "diff_url": "https://example.com/pull/21.diff",
+                "head": {
+                  "ref": "feature/webhook-review",
+                  "sha": "abc123"
+                },
+                "labels": []
+              },
+              "label": {
+                "name": "%s"
+              },
+              "repository": {
+                "full_name": "hamplz/auto-comment"
+              }
+            }
+            """.formatted(REVIEW_TRIGGER_LABEL);
+
+        mockMvc.perform(post("/webhook/github")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isOk())
+            .andExpect(content().string("ignored"));
+
+        verifyNoInteractions(reviewJobQueueService);
+    }
+
+    @Test
     @DisplayName("ignores event without review label")
     void ignoreNonReviewTargetAction() throws Exception {
         String payload = """

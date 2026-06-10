@@ -1,6 +1,7 @@
 package com.hamplz.autocomment.webhook;
 
 import com.hamplz.autocomment.config.GithubProperties;
+import com.hamplz.autocomment.webhook.dto.PullRequestAction;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.springframework.stereotype.Component;
 
@@ -23,6 +24,10 @@ public class WebhookEventFilter {
 
         if (githubProperties.reviewBranch()
                 .equalsIgnoreCase(parsedWebhook.headRef())) {
+            return false;
+        }
+
+        if (parsedWebhook.action() != PullRequestAction.LABELED) {
             return false;
         }
 
