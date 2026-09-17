@@ -29,7 +29,6 @@ public class WebhookPayloadParser {
                 null,
                 null,
                 null,
-                List.of(),
                 getChangedLabel(webhookPayload)
             );
         }
@@ -39,7 +38,6 @@ public class WebhookPayloadParser {
         String headRef = pr.path("head").path("ref").asText();
         String headSha = pr.path("head").path("sha").asText();
         String repoFullName = webhookPayload.path("repository").path("full_name").asText();
-        List<String> labels = getLabels(pr);
         String changedLabel = getChangedLabel(webhookPayload);
 
         log.info("action = {}", action);
@@ -59,7 +57,6 @@ public class WebhookPayloadParser {
             headRef,
             headSha,
             repoFullName,
-            labels,
             changedLabel
         );
     }

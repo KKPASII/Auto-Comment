@@ -1,7 +1,5 @@
 package com.hamplz.autocomment.webhook.dto;
 
-import java.util.List;
-
 public record PullRequestWebhook(
     PullRequestAction action,
     int prNumber,
@@ -10,6 +8,5 @@ public record PullRequestWebhook(
     String headRef,
     String headSha,
     String repoFullName,
-    List<String> labels,
     String changedLabel
 ) {}
