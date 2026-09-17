@@ -1,5 +1,6 @@
 package com.hamplz.autocomment.review.service;
 
+import com.hamplz.autocomment.review.dto.DispatchResult;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,13 +34,48 @@ public class AsyncReviewService {
     public void review(PullRequestWebhook parsedWebhook) {
         try {
             reviewJobStatusService.markRunning(parsedWebhook);
-            log.info(LOG_REVIEW_STARTED, parsedWebhook.repoFullName(), parsedWebhook.prNumber());
-            pullRequestReviewService.review(parsedWebhook);
-            reviewJobStatusService.markSuccess(parsedWebhook);
-            log.info(LOG_REVIEW_SUCCEEDED, parsedWebhook.repoFullName(), parsedWebhook.prNumber());
+
+            log.info(
+                LOG_REVIEW_STARTED,
+                parsedWebhook.repoFullName(),
+                parsedWebhook.prNumber()
+            );
+
+            DispatchResult dispatchResult = pullRequestReviewService.review(parsedWebhook);
+
+            if (dispatchResult.isFullySucceeded()) {
+                reviewJobStatusService.markSuccess(parsedWebhook);
+
+                log.info(
+                    LOG_REVIEW_SUCCEEDED,
+                    parsedWebhook.repoFullName(),
+                    parsedWebhook.prNumber()
+                );
+
+                return;
+            }
+
+            reviewJobStatusService.markPartialFailed(
+                parsedWebhook,
+                dispatchResult.summary()
+            );
+
+            log.warn(
+                "Review job partially failed - {} PR #{} {}",
+                parsedWebhook.repoFullName(),
+                parsedWebhook.prNumber(),
+                dispatchResult.summary()
+            );
+
         } catch (Exception e) {
             reviewJobStatusService.markFailed(parsedWebhook, e);
-            log.error(LOG_REVIEW_FAILED, parsedWebhook.repoFullName(), parsedWebhook.prNumber(), e);
+
+            log.error(
+                LOG_REVIEW_FAILED,
+                parsedWebhook.repoFullName(),
+                parsedWebhook.prNumber(),
+                e
+            );
         }
     }
 }

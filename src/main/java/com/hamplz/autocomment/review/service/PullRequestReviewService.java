@@ -23,7 +23,7 @@ public class PullRequestReviewService {
         this.asyncResultDispatchService = asyncResultDispatchService;
     }
 
-    public void review(PullRequestWebhook webhook) {
+    public DispatchResult review(PullRequestWebhook webhook) {
         log.info("리뷰 시작 - {} PR #{}", webhook.repoFullName(), webhook.prNumber());
 
         String diffContent = githubDiffService.getPullRequestDiff(webhook.diffUrl());
@@ -54,13 +54,20 @@ public class PullRequestReviewService {
         );
 
         if (!dispatchResult.isFullySucceeded()) {
-            log.warn("리뷰 결과 처리 일부 실패 - {} PR #{} {}",
+            log.warn(
+                "리뷰 결과 처리 일부 실패 - {} PR #{} {}",
                 webhook.repoFullName(),
                 webhook.prNumber(),
                 dispatchResult.summary()
             );
         }
 
-        log.info("리뷰 완료 - {} PR #{}", webhook.repoFullName(), webhook.prNumber());
+        log.info(
+            "리뷰 완료 - {} PR #{}",
+            webhook.repoFullName(),
+            webhook.prNumber()
+        );
+
+        return dispatchResult;
     }
 }

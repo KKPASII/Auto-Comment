@@ -39,6 +39,10 @@ public class ReviewJobStatusService {
         save(webhook, ReviewJobStatus.SUCCESS, null);
     }
 
+    public void markPartialFailed(PullRequestWebhook webhook, String errorMessage) {
+        save(webhook, ReviewJobStatus.PARTIAL_FAILED, errorMessage);
+    }
+
     public void markFailed(PullRequestWebhook webhook, Exception e) {
         save(webhook, ReviewJobStatus.FAILED, e.getMessage());
     }
