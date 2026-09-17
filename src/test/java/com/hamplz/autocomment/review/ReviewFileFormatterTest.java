@@ -1,6 +1,5 @@
-package com.hamplz.autocomment;
+package com.hamplz.autocomment.review;
 
-import com.hamplz.autocomment.review.ReviewFileFormatter;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,13 +1,9 @@
-package com.hamplz.autocomment;
+package com.hamplz.autocomment.webhook;
 
 import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.review.service.ReviewJobQueueService;
 import com.hamplz.autocomment.review.service.PullRequestReviewService;
 import com.hamplz.autocomment.review.service.ReviewRequestDeduplicationService;
-import com.hamplz.autocomment.webhook.GitHubWebhookSignatureVerifier;
-import com.hamplz.autocomment.webhook.WebhookController;
-import com.hamplz.autocomment.webhook.WebhookEventFilter;
-import com.hamplz.autocomment.webhook.WebhookPayloadParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

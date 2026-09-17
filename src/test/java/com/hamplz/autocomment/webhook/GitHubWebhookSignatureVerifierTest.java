@@ -1,7 +1,6 @@
-package com.hamplz.autocomment;
+package com.hamplz.autocomment.webhook;
 
 import com.hamplz.autocomment.config.GithubProperties;
-import com.hamplz.autocomment.webhook.GitHubWebhookSignatureVerifier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
