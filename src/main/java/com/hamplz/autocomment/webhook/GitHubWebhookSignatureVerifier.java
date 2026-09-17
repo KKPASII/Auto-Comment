@@ -24,32 +24,48 @@ public class GitHubWebhookSignatureVerifier {
         this.githubProperties = githubProperties;
     }
 
-    public boolean isValid(String payload, String signatureHeader) {
-        if (githubProperties.webhookSecret() == null || githubProperties.webhookSecret().isBlank()) {
-            log.warn("github.webhook-secret is not configured. Skipping webhook signature verification.");
-            return true;
+    public boolean isValid(byte[] payload, String signatureHeader) {
+        String webhookSecret = githubProperties.webhookSecret();
+
+        if (webhookSecret == null || webhookSecret.isBlank()) {
+            log.warn("GitHub webhook secret is not configured.");
+            return false;
         }
 
         if (signatureHeader == null || !signatureHeader.startsWith(SIGNATURE_PREFIX)) {
             return false;
         }
 
-        String expectedSignature = SIGNATURE_PREFIX + sign(payload);
+        String signatureHex = signatureHeader.substring(SIGNATURE_PREFIX.length());
+
+        byte[] actualSignature;
+
+        try {
+            actualSignature = HexFormat.of().parseHex(signatureHex);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+
+        byte[] expectedSignature = sign(payload, webhookSecret);
+
         return MessageDigest.isEqual(
-            expectedSignature.getBytes(StandardCharsets.UTF_8),
-            signatureHeader.getBytes(StandardCharsets.UTF_8)
+            expectedSignature,
+            actualSignature
         );
     }
 
-    private String sign(String payload) {
+    private byte[] sign(byte[] payload, String webhookSecret) {
         try {
             Mac mac = Mac.getInstance(SIGNATURE_ALGORITHM);
+
             SecretKeySpec secretKey = new SecretKeySpec(
-                githubProperties.webhookSecret().getBytes(StandardCharsets.UTF_8),
+                webhookSecret.getBytes(StandardCharsets.UTF_8),
                 SIGNATURE_ALGORITHM
             );
+
             mac.init(secretKey);
-            return HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+
+            return mac.doFinal(payload);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to verify GitHub webhook signature", e);
         }

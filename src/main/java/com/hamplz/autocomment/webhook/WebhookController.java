@@ -1,6 +1,5 @@
 package com.hamplz.autocomment.webhook;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hamplz.autocomment.review.service.ReviewJobQueueService;
@@ -10,11 +9,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/webhook")
@@ -58,7 +55,7 @@ public class WebhookController {
 
     @PostMapping("/github")
     public ResponseEntity<String> receive(
-        @RequestBody String payload,
+        @RequestBody byte[] payload,
         @RequestHeader(value = "X-Hub-Signature-256", required = false) String signatureHeader
     ) {
 
@@ -72,7 +69,7 @@ public class WebhookController {
         JsonNode parsedPayload;
         try {
             parsedPayload = objectMapper.readTree(payload);
-        } catch (JsonProcessingException e) {
+        } catch (IOException e) {
             log.info(LOG_INVALID_PAYLOAD, e);
             return ResponseEntity.badRequest().body(RESPONSE_INVALID_PAYLOAD);
         }
