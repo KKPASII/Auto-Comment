@@ -24,6 +24,7 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.function.Supplier;
 
 import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CHECK_REVIEW_BRANCH;
 import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CREATE_REVIEW_BRANCH;
@@ -77,17 +78,35 @@ public class GithubFileService {
             reviewComment
         );
 
+        return saveFilesInParallel(
+            () -> saveHistoryFileSafely(
+                repoFullName,
+                prNumber,
+                markdownContent
+            ),
+            () -> saveLatestFileSafely(
+                repoFullName,
+                prNumber,
+                markdownContent
+            )
+        );
+    }
+
+    ReviewFileSaveResult saveFilesInParallel(
+        Supplier<DispatchTaskResult> historyTask,
+        Supplier<DispatchTaskResult> latestTask
+    ) {
         CompletableFuture<DispatchTaskResult> historyFuture =
             CompletableFuture.supplyAsync(
-                () -> saveHistoryFileSafely(repoFullName, prNumber, markdownContent),
+                historyTask,
                 fileTaskExecutor
-        );
+            );
 
         CompletableFuture<DispatchTaskResult> latestFuture =
             CompletableFuture.supplyAsync(
-                () -> saveLatestFileSafely(repoFullName, prNumber, markdownContent),
+                latestTask,
                 fileTaskExecutor
-        );
+            );
 
         return new ReviewFileSaveResult(
             historyFuture.join(),
