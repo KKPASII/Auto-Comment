@@ -3,10 +3,14 @@ package com.hamplz.autocomment.review.service;
 import com.hamplz.autocomment.github.service.GithubDiffService;
 import com.hamplz.autocomment.openai.GptReviewService;
 import com.hamplz.autocomment.review.dto.DispatchResult;
+import com.hamplz.autocomment.review.dto.DispatchTaskResult;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 @Service
 public class PullRequestReviewService {
@@ -30,15 +34,15 @@ public class PullRequestReviewService {
 
         String reviewComment = gptReviewService.generateReview(diffContent);
 
-        var commentFuture =
-            asyncResultDispatchService.commentAsync(
+        Supplier<CompletableFuture<DispatchTaskResult>> commentTask =
+            () -> asyncResultDispatchService.commentAsync(
                 webhook.repoFullName(),
                 webhook.prNumber(),
                 reviewComment
             );
 
-        var saveReviewFuture =
-            asyncResultDispatchService.saveReviewAsync(
+        Supplier<CompletableFuture<DispatchTaskResult>> saveReviewTask =
+            () -> asyncResultDispatchService.saveReviewAsync(
                 webhook.repoFullName(),
                 webhook.prNumber(),
                 webhook.title(),
@@ -46,10 +50,8 @@ public class PullRequestReviewService {
                 reviewComment
             );
 
-        DispatchResult dispatchResult = new DispatchResult(
-            commentFuture.join(),
-            saveReviewFuture.join()
-        );
+        DispatchResult dispatchResult =
+            dispatchInParallel(commentTask, saveReviewTask);
 
         if (!dispatchResult.isFullySucceeded()) {
             log.warn(
@@ -58,14 +60,60 @@ public class PullRequestReviewService {
                 webhook.prNumber(),
                 dispatchResult.summary()
             );
+
+            dispatchResult = retryFailedDispatchTasks(
+                dispatchResult,
+                commentTask,
+                saveReviewTask
+            );
         }
 
         log.info(
-            "리뷰 완료 - {} PR #{}",
+            "리뷰 완료 - {} PR #{} {}",
             webhook.repoFullName(),
-            webhook.prNumber()
+            webhook.prNumber(),
+            dispatchResult.summary()
         );
 
         return dispatchResult;
+    }
+
+    DispatchResult dispatchInParallel(
+        Supplier<CompletableFuture<DispatchTaskResult>> commentTask,
+        Supplier<CompletableFuture<DispatchTaskResult>> saveReviewTask
+    ) {
+        CompletableFuture<DispatchTaskResult> commentFuture = commentTask.get();
+        CompletableFuture<DispatchTaskResult> saveReviewFuture = saveReviewTask.get();
+
+        return new DispatchResult(
+            commentFuture.join(),
+            saveReviewFuture.join()
+        );
+    }
+
+    DispatchResult retryFailedDispatchTasks(
+        DispatchResult previousResult,
+        Supplier<CompletableFuture<DispatchTaskResult>> commentTask,
+        Supplier<CompletableFuture<DispatchTaskResult>> saveReviewTask
+
+    ) {
+        Supplier<CompletableFuture<DispatchTaskResult>> commentRetryTask =
+            previousResult.commentResult().succeeded()
+                ? () -> CompletableFuture.completedFuture(
+                previousResult.commentResult()
+            )
+                : commentTask;
+
+        Supplier<CompletableFuture<DispatchTaskResult>> saveReviewRetryTask =
+            previousResult.saveReviewResult().succeeded()
+                ? () -> CompletableFuture.completedFuture(
+                previousResult.saveReviewResult()
+            )
+                : saveReviewTask;
+
+        return dispatchInParallel(
+            commentRetryTask,
+            saveReviewRetryTask
+        );
     }
 }
