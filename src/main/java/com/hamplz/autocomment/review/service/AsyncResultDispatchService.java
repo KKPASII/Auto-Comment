@@ -1,5 +1,6 @@
 package com.hamplz.autocomment.review.service;
 
+import com.hamplz.autocomment.github.dto.ReviewFileSaveResult;
 import com.hamplz.autocomment.github.service.GithubCommentService;
 import com.hamplz.autocomment.github.service.GithubFileService;
 import com.hamplz.autocomment.review.dto.DispatchTaskResult;
@@ -50,11 +51,31 @@ public class AsyncResultDispatchService {
     ) {
         try {
             log.info("리뷰 파일 저장 시작 - {} PR #{}", repoFullName, prNumber);
-            githubFileService.saveReviewFile(repoFullName, prNumber, title, action, reviewComment);
+
+            ReviewFileSaveResult reviewFileSaveResult = githubFileService.saveReviewFile(repoFullName, prNumber, title, action, reviewComment);
+
+            if (!reviewFileSaveResult.isFullySucceeded()) {
+                log.warn(
+                    "리뷰 파일 일부 저장 실패 - {} PR #{} {}",
+                    repoFullName,
+                    prNumber,
+                    reviewFileSaveResult.summary()
+                );
+
+                return CompletableFuture.completedFuture(
+                    DispatchTaskResult.failure(
+                        new RuntimeException(reviewFileSaveResult.summary())
+                    )
+                );
+            }
+
             log.info("리뷰 파일 저장 완료 - {} PR #{}", repoFullName, prNumber);
+
             return CompletableFuture.completedFuture(DispatchTaskResult.success());
+
         } catch(Exception e) {
             log.error("리뷰 파일 저장 실패 - {} PR #{}", repoFullName, prNumber, e);
+
             return CompletableFuture.completedFuture(DispatchTaskResult.failure(e));
         }
     }

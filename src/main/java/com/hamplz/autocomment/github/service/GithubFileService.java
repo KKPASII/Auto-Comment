@@ -4,7 +4,9 @@ import com.hamplz.autocomment.config.AsyncConfig;
 import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.github.dto.GithubFileRequest;
 import com.hamplz.autocomment.github.dto.GithubRequestFactory;
+import com.hamplz.autocomment.github.dto.ReviewFileSaveResult;
 import com.hamplz.autocomment.review.ReviewFileFormatter;
+import com.hamplz.autocomment.review.dto.DispatchTaskResult;
 import com.hamplz.autocomment.support.ExternalApiRetryExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,11 +57,13 @@ public class GithubFileService {
         this.fileTaskExecutor = fileTaskExecutor;
     }
 
-    public void saveReviewFile(String repoFullName,
-                               int prNumber,
-                               String title,
-                               String action,
-                               String reviewComment) {
+    public ReviewFileSaveResult saveReviewFile(
+        String repoFullName,
+        int prNumber,
+        String title,
+        String action,
+        String reviewComment
+    ) {
         validateGithubProperties();
 
         ensureBranchExists(repoFullName, githubProperties.reviewBranch());
@@ -73,17 +77,22 @@ public class GithubFileService {
             reviewComment
         );
 
-        CompletableFuture<Void> historyFuture = CompletableFuture.runAsync(
-            () -> saveHistoryFile(repoFullName, prNumber, markdownContent),
-            fileTaskExecutor
+        CompletableFuture<DispatchTaskResult> historyFuture =
+            CompletableFuture.supplyAsync(
+                () -> saveHistoryFileSafely(repoFullName, prNumber, markdownContent),
+                fileTaskExecutor
         );
 
-        CompletableFuture<Void> latestFuture = CompletableFuture.runAsync(
-            () -> saveLatestFile(repoFullName, prNumber, markdownContent),
-            fileTaskExecutor
+        CompletableFuture<DispatchTaskResult> latestFuture =
+            CompletableFuture.supplyAsync(
+                () -> saveLatestFileSafely(repoFullName, prNumber, markdownContent),
+                fileTaskExecutor
         );
 
-        CompletableFuture.allOf(historyFuture, latestFuture).join();
+        return new ReviewFileSaveResult(
+            historyFuture.join(),
+            latestFuture.join()
+        );
     }
 
     private void saveHistoryFile(String repoFullName, int prNumber, String markdown) {
@@ -110,6 +119,27 @@ public class GithubFileService {
         );
 
         log.info("히스토리 파일 저장 완료: {}", path);
+    }
+
+    private DispatchTaskResult saveHistoryFileSafely(
+        String repoFullName,
+        int prNumber,
+        String markdownContent
+    ) {
+        try {
+            saveHistoryFile(repoFullName, prNumber, markdownContent);
+
+            return DispatchTaskResult.success();
+        } catch(Exception e) {
+            log.error(
+                "히스토리 파일 저장 실패 - {} PR #{}",
+                repoFullName,
+                prNumber,
+                e
+            );
+
+            return DispatchTaskResult.failure(e);
+        }
     }
 
     private void saveLatestFile(String repoFullName, int prNumber, String content) {
@@ -149,6 +179,27 @@ public class GithubFileService {
         );
 
         log.info("latest.md 저장 완료");
+    }
+
+    private DispatchTaskResult saveLatestFileSafely(
+        String repoFullName,
+        int prNumber,
+        String markdownContent
+    ) {
+        try {
+            saveLatestFile(repoFullName, prNumber, markdownContent);
+
+            return DispatchTaskResult.success();
+        } catch(Exception e) {
+            log.error(
+              "latest.md 저장 실패 - {} PR #{}",
+              repoFullName,
+              prNumber,
+              e
+            );
+
+            return DispatchTaskResult.failure(e);
+        }
     }
 
     private String getFileSha(String repoFullName, String path, String branch) {
