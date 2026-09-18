@@ -27,10 +27,8 @@ public class PullRequestReviewService {
         log.info("리뷰 시작 - {} PR #{}", webhook.repoFullName(), webhook.prNumber());
 
         String diffContent = githubDiffService.getPullRequestDiff(webhook.diffUrl());
-        log.info("\n==== PR DIFF START ====\n{}\n==== PR DIFF END ====\n", diffContent);
 
         String reviewComment = gptReviewService.generateReview(diffContent);
-        log.info("\n==== GPT REVIEW START ====\n{}\n==== GPT REVIEW END ====\n", reviewComment);
 
         var commentFuture =
             asyncResultDispatchService.commentAsync(
