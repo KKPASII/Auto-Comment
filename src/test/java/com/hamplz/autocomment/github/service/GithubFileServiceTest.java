@@ -13,6 +13,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.RestClient;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
@@ -111,5 +113,92 @@ public class GithubFileServiceTest {
             "history 저장 실패",
             result.historyResult().errorMessage()
         );
+    }
+
+    @Test
+    void latest만_실패하면_history는_retry하지_않고_latest만_retry한다() {
+        AtomicInteger historyCount = new AtomicInteger();
+        AtomicInteger latestCount = new AtomicInteger();
+
+        Supplier<DispatchTaskResult> historyTask = () -> {
+            historyCount.incrementAndGet();
+
+            return DispatchTaskResult.success();
+        };
+
+        Supplier<DispatchTaskResult> latestTask = () -> {
+            int count = latestCount.incrementAndGet();
+
+            if (count == 1) {
+                return DispatchTaskResult.failure(
+                    new RuntimeException("latest 저장 실패")
+                );
+            }
+
+            return DispatchTaskResult.success();
+        };
+
+        ReviewFileSaveResult firstResult =
+            githubFileService.saveFilesInParallel(
+                historyTask,
+                latestTask
+            );
+
+        ReviewFileSaveResult finalResult =
+            githubFileService.retryFailedFileTask(
+                firstResult,
+                historyTask,
+                latestTask
+            );
+
+        assertEquals(1, historyCount.get());
+        assertEquals(2, latestCount.get());
+
+        assertTrue(finalResult.historyResult().succeeded());
+        assertTrue(finalResult.latestResult().succeeded());
+
+        assertTrue(finalResult.isFullySucceeded());
+    }
+
+    @Test
+    void history만_실패하면_latest는_retry하지_않고_history만_retry한다() {
+        AtomicInteger historyCount = new AtomicInteger();
+        AtomicInteger latestCount = new AtomicInteger();
+
+        Supplier<DispatchTaskResult> historyTask = () -> {
+            int count = historyCount.incrementAndGet();
+
+            if (count == 1) {
+                return DispatchTaskResult.failure(
+                    new RuntimeException("history 저장 실패")
+                );
+            }
+
+            return DispatchTaskResult.success();
+        };
+
+        Supplier<DispatchTaskResult> latestTask = () -> {
+            latestCount.incrementAndGet();
+
+            return DispatchTaskResult.success();
+        };
+
+        ReviewFileSaveResult firstResult =
+            githubFileService.saveFilesInParallel(
+                historyTask,
+                latestTask
+            );
+
+        ReviewFileSaveResult finalResult =
+            githubFileService.retryFailedFileTask(
+                firstResult,
+                historyTask,
+                latestTask
+            );
+
+        assertEquals(2, historyCount.get());
+        assertEquals(1, latestCount.get());
+
+        assertTrue(finalResult.isFullySucceeded());
     }
 }

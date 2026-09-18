@@ -78,17 +78,37 @@ public class GithubFileService {
             reviewComment
         );
 
+        Supplier<DispatchTaskResult> historyTask =
+            () -> saveHistoryFileSafely(repoFullName, prNumber, markdownContent);
+
+        Supplier<DispatchTaskResult> latestTask =
+            () -> saveLatestFileSafely(repoFullName, prNumber, markdownContent);
+
+        ReviewFileSaveResult result = saveFilesInParallel(historyTask, latestTask);
+
+        if (!result.isFullySucceeded()) {
+            result = retryFailedFileTask(result, historyTask, latestTask);
+        }
+
+        return result;
+    }
+
+    ReviewFileSaveResult retryFailedFileTask(
+        ReviewFileSaveResult previousResult,
+        Supplier<DispatchTaskResult> historyTask,
+        Supplier<DispatchTaskResult> latestTask
+    ) {
+        Supplier<DispatchTaskResult> historyRetryTask =
+            previousResult.historyResult().succeeded()
+            ? () -> previousResult.historyResult() : historyTask;
+
+        Supplier<DispatchTaskResult> latestRetryTask =
+            previousResult.latestResult().succeeded()
+            ? () -> previousResult.latestResult() : latestTask;
+
         return saveFilesInParallel(
-            () -> saveHistoryFileSafely(
-                repoFullName,
-                prNumber,
-                markdownContent
-            ),
-            () -> saveLatestFileSafely(
-                repoFullName,
-                prNumber,
-                markdownContent
-            )
+            historyRetryTask,
+            latestRetryTask
         );
     }
 
