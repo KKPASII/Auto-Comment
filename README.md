@@ -164,7 +164,6 @@ reviews/
 ### 🔍 문제 상황
 
 초기 구조에서는 **하나의 Webhook 요청** 안에서 다음 **작업을 순차적**으로 수행했습니다.
-즉, 하나의 요청 흐름에서 모든 외부 API 호출이 수행되는 구조
 
 ```text
 Webhook 요청
@@ -181,19 +180,34 @@ Webhook 응답
 ```
 
 GitHub / OpenAI API는 네트워크 I/O가 포함된 외부 시스템이기 때문에
-응답 시간이 길어질 경우 요청 Thread 역시 계속 대기하게 됩니다.
+응답이 지연되면 Webhook 요청 Thread 역시 외부 API 응답을 기다리며 계속 점유됩니다.
 
-특히 다음과 같은 문제가 발생할 수 있다고 판단했습니다.
+GitHub Docs에 따르면 GitHub Webhook은 서버가 **10초 이내에 2XX 응답을 반환**할 것을 권장합니다.
+(https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
+응답이 지나치게 늦으면 Delivery 처리에 문제가 발생할 수 있습니다.
 
 - OpenAI 응답 지연에 따라 Webhook 응답 시간 증가
 - 하나의 외부 API가 지연되면 뒤의 작업도 모두 대기
 - 동시에 여러 Webhook이 들어올 경우 요청 Thread가 장시간 점유될 가능성
 - GitHub Webhook의 빠른 응답 요구사항을 만족하지 못할 가능성
 
+### 🧠 원인
 
-GitHub Docs에 따르면 GitHub Webhook은 서버가 **10초 이내에 2XX 응답을 반환**할 것을 권장합니다.
-(https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
-응답이 지나치게 늦으면 Delivery 처리에 문제가 발생할 수 있습니다.
+Webhook 요청 처리와 실제 리뷰 작업의 생명주기가 분리되지 않은 것이 원인이었습니다.
+
+```text
+HTTP 요청 Thread
+    ↓
+Diff 조회
+    ↓
+OpenAI
+    ↓
+GitHub 저장
+    ↓
+응답
+```
+
+외부 API 호출이 모두 끝나야 HTTP 요청 Thread가 반환되는 구조였습니다.
 
 ### 해결
 
@@ -220,17 +234,26 @@ GitHub / OpenAI API 호출
 리뷰 결과 처리
 ```
 
-Redis I/O 자체를 Non-Blocking으로 구현한 것은 아니고, 시간이 오래 걸리는 Blocking 외부 API 작업을
+Redis I/O 자체를 Non-Blocking으로 구현한 것은 아닙니다.
+
+대신 시간이 오래 걸리는 Blocking 외부 API 작업을
 **HTTP 요청 처리 경로에서 분리**하여 Webhook 요청 Thread가 외부 API 응답을 기다리지 않도록 했습니다.
 
-현재 Worker는 하나의 Review Job을 완료한 뒤 다음 Job을 처리하는 구조이므로
-Job 단위 처리는 순차적입니다.
+현재 Worker는 Review Job 하나를 완료한 뒤 다음 Job을 처리하는 순차 소비 방식이지만,
+ Worker가 Job을 처리하는 동안에도 새로운 Webhook 요청은 Redis Queue에 계속 저장할 수 있습니다.
 
-그렇지만, Worker가 Job을 처리하는 동안 새로운 Webhook 요청은 계속 Redis Queue에 저장할 수 있습니다.
+### ✅ 결과
+
+- Webhook 요청은 실제 리뷰 완료를 기다리지 않고 `202 Accepted` 반환
+- 외부 API 응답 시간이 Webhook 응답 시간에 직접 포함되지 않도록 분리
+- 순간적으로 여러 요청이 들어와도 Redis Queue에 작업을 적재할 수 있는 구조로 개선
+- 외부 API의 Blocking I/O가 Webhook 요청 Thread를 장시간 점유하던 문제 개선
 
 ---
 
-## 2. 독립적인 외부 API 작업의 병렬 처리
+## 2. 서로 독립적인 외부 API 작업을 순차 처리하던 문제
+
+🔍 문제 상황
 
 PR diff 조회와 OpenAI 리뷰 생성은 의존 관계가 있습니다.
 
@@ -242,7 +265,7 @@ OpenAI Review
 
 OpenAI가 리뷰를 생성하려면 먼저 diff 결과가 필요하기 때문에 두 작업은 순차적으로 수행합니다.
 
-반면 GPT 리뷰가 만들어진 이후의 다음 작업들은 서로 독립적입니다.
+반면 GPT 리뷰가 만들어진 이후의 다음 작업들은 서로 의존하지 않고 독립적입니다.
 
 ```text
              GPT Review
@@ -252,9 +275,32 @@ OpenAI가 리뷰를 생성하려면 먼저 diff 결과가 필요하기 때문에
     PR Comment        Review File
 ```
 
-따라서 `CompletableFuture`와 별도 Executor를 이용하여 병렬로 실행했습니다.
+초기에는 이 독립적인 작업들까지 순차적으로 처리하고 있었습니다.
 
-리뷰 파일 저장 내부에서도:
+### 🧠 원인
+
+작업 간 데이터 의존성을 구분하지 않고 전체 리뷰 파이프라인을 하나의 순차 흐름으로 구성했기 때문입니다.
+
+```text
+Comment 완료
+    ↓
+Review File 저장
+```
+
+두 작업이 서로의 결과를 필요로 하지 않음에도 앞 작업이 끝날 때까지 다음 작업이 기다리는 구조였습니다.
+
+### 🛠 해결
+
+`PR 댓글 등록`과 `리뷰 파일 저장`을 별도의 Executor에서 병렬 처리하도록 변경했습니다.
+
+```text
+             GPT Review
+                 ↓
+        ┌────────┴────────┐
+        │                 │
+    PR Comment        Review File
+```
+리뷰 파일 저장 내부에서도 `History`와 `latest.md` 저장은 서로 독립적이므로 병렬 처리했습니다.
 
 ```text
           Review File
@@ -264,38 +310,74 @@ OpenAI가 리뷰를 생성하려면 먼저 diff 결과가 필요하기 때문에
      History        Latest
 ```
 
-History 저장과 `latest.md` 저장을 병렬 처리합니다.
+### ✅ 결과
 
-이를 통해, 서로 의존하지 않는 외부 API 작업을 순차적으로 기다리지 않고 동시에 처리할 수 있도록 했습니다.
+순차 처리에서는 두 작업의 처리 시간이 합산될 수 있습니다.
+
+```text
+Comment 처리 시간
++
+ReviewFile 처리 시간
+```
+
+병렬 처리 이후에는 두 작업 중 더 오래 걸리는 작업의 완료 시간을 중심으로 기다리는 구조로 변경했습니다.
+
+```text
+max( Comment 처리 시간, ReviewFile 처리 시간 )
+```
+
+History / Latest 저장도 동일한 구조로 개선했습니다.
+
+별도의 성능 벤치마크를 수행하지 않아 정확한 감소율을 측정하지는 않았지만,
+**서로 독립적인 I/O 작업을 순차 실행에서 병렬 실행으로 변경하여 후처리 대기 시간을 구조적으로 줄였습니다.**
 
 ---
 
 ## 3. 병렬 처리의 부분 실패 문제
 
-병렬 처리를 적용한 뒤에는 테스트를 해보며 새로운 문제를 발견했습니다.
+### 🔍 문제 상황
 
-예를 들어:
+병렬 처리를 적용한 뒤 테스트하는 과정에서,
+일부 작업이 실패했음에도 전체 Review Job이 `SUCCESS`로 처리되는 문제를 발견했습니다.
 
 ```text
 PR Comment     SUCCESS
 Review File    FAILED
 ```
 
-처럼 한 작업만 실패할 경우, 
-단순히 예외 발생 여부만 확인하여 일부 작업이 실패했음에도 전체 작업을 `SUCCESS`로 처리되고 있었습니다.
-
-또한 Review File 내부에서도:
+리뷰 파일 저장 내부에서도 동일하게 부분 실패가 발생할 수 있습니다.
 
 ```text
 History    SUCCESS
 Latest     FAILED
 ```
 
-와 같은 부분 실패가 발생할 수 있습니다.
+기존 구조에서는 하위 작업에서 실패 결과를 반환하더라도
+상위 계층에서 예외가 발생하지 않으면 전체 Review Job을 `SUCCESS`로 처리하고 있었습니다.
+
+### 🧠 원인
+
+병렬 작업의 성공 여부를 개별적으로 관리하지 않고,
+상위 메서드가 정상적으로 반환됐는지만을 기준으로 전체 성공 여부를 판단했기 때문입니다.
+
+즉:
+
+```text
+Comment       SUCCESS
+ReviewFile    FAILED
+                  ↓
+상위 메서드는 정상 반환
+                  ↓
+Job SUCCESS ❌
+```
+
+즉, 병렬 작업 중 일부가 실패하더라도 그 결과가 상위 계층까지 명확하게 전달되지 않아
+부분 실패를 전체 성공으로 판단할 수 있는 구조였습니다.
 
 ### 해결
 
-각 병렬 작업의 결과를 별도의 결과 객체로 관리했습니다.
+각 병렬 작업의 실행 결과를 별도의 객체로 관리하고,
+하위 작업의 성공/실패 정보를 상위 계층까지 전달하도록 변경했습니다.
 
 ```text
 Comment / ReviewFile
@@ -316,10 +398,11 @@ DispatchResult dispatchResult = new DispatchResult(
 );
 ```
 
-부분 실패가 발생하면 이미 성공한 작업은 다시 실행하지 않고
-**실패한 작업만 선택적으로 재시도**합니다.
+이를 통해 두 병렬 작업의 결과를 각각 확인한 뒤
+전체 Review Job의 최종 상태를 판단할 수 있도록 했습니다.
 
-예를 들어:
+또한 부분 실패가 발생하면 해당 처리 단계에서
+실패한 작업만 선택적으로 재시도하도록 변경했습니다.
 
 ```text
 1차 실행
@@ -351,18 +434,32 @@ History    실행하지 않음
 Latest     다시 실행
 ```
 
-최종 결과에 따라 Job 상태를 구분합니다.
+따라서 동일 처리 단계에서는 이미 성공한 작업을 다시 수행하지 않고,
+실패한 작업을 우선적으로 재시도할 수 있도록 구성했습니다.
+
+### ✅ 결과
+
+최종 처리 결과를 다음과 같이 구분할 수 있게 되었습니다.
 
 ```text
 모든 작업 성공
 → SUCCESS
 
-리뷰 생성까지 완료했지만 후처리 일부가 Retry 후에도 실패
+리뷰 생성은 완료했지만
+후처리 일부가 Retry 후에도 실패
 → PARTIAL_FAILED
 
-diff 조회 / OpenAI 호출 등 리뷰 실행 자체를 완료하지 못함
+Diff 조회 / OpenAI 호출 등
+Review Job 자체를 완료하지 못함
 → FAILED
 ```
+
+이를 통해 다음과 같이 개선했습니다.
+
+- 병렬 작업의 부분 실패를 명시적으로 식별
+- 하위 작업의 성공/실패 결과를 상위 계층까지 전달
+- 부분 실패 시 이미 성공한 작업은 유지하고, 실패한 작업만 재시도
+- 전체 실패와 부분 실패를 상태 수준에서 구분
 
 ---
 
@@ -638,8 +735,6 @@ GitHub Comment와 같은 POST 요청은
 신뢰 가능한 GitHub API Endpoint를 직접 구성하도록 개선할 수 있습니다.
 
 ---
-
-# 💡 배운 점
 
 # 💡 배운 점
 
