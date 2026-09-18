@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.concurrent.CompletableFuture;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -176,6 +177,67 @@ public class PullRequestReviewServiceTest {
         assertTrue(
             result.isFullySucceeded()
         );
+    }
+
+    @Test
+    void 리뷰파일이_retry까지_실패하면_최종결과도_실패한다() {
+        PullRequestWebhook webhook = createWebhook();
+
+        when(githubDiffService.getPullRequestDiff(anyString()))
+            .thenReturn("test diff");
+
+        when(gptReviewService.generateReview("test diff"))
+            .thenReturn("test review");
+
+        when(asyncResultDispatchService.commentAsync(
+            anyString(),
+            anyInt(),
+            anyString()
+        )).thenReturn(
+            CompletableFuture.completedFuture(
+                DispatchTaskResult.success()
+            )
+        );
+
+        when(asyncResultDispatchService.saveReviewAsync(
+            anyString(),
+            anyInt(),
+            anyString(),
+            anyString(),
+            anyString()
+        )).thenReturn(
+            CompletableFuture.completedFuture(
+                DispatchTaskResult.failure(
+                    new RuntimeException("1차 실패")
+                )
+            ),
+            CompletableFuture.completedFuture(
+                DispatchTaskResult.failure(
+                    new RuntimeException("retry 실패")
+                )
+            )
+        );
+
+        DispatchResult result =
+            pullRequestReviewService.review(webhook);
+
+        verify(asyncResultDispatchService, times(1))
+            .commentAsync(
+                anyString(),
+                anyInt(),
+                anyString()
+            );
+
+        verify(asyncResultDispatchService, times(2))
+            .saveReviewAsync(
+                anyString(),
+                anyInt(),
+                anyString(),
+                anyString(),
+                anyString()
+            );
+
+        assertFalse(result.isFullySucceeded());
     }
 
     private PullRequestWebhook createWebhook() {
