@@ -1,16 +1,18 @@
 # Auto Comment 🤖
+
 GitHub PR 이벤트 기반 GPT 자동 코드 리뷰 & 로그 시스템
 
 ---
 
 ## 🔥 프로젝트 소개
 GitHub Pull Request 이벤트를 감지하여 변경된 diff를 분석하고,
-GPT 기반 코드 리뷰를 자동 생성해 PR 댓글과 리뷰 로그로 저장하는 **백엔드 자동화 시스템**입니다.
-리뷰는 PR에 `ai-review:on` 라벨이 추가되었을 때 실행됩니다.
+GPT 기반 코드 리뷰를 자동 생성해 **PR 댓글과 리뷰 로그로 저장하는 백엔드 자동화 시스템**입니다.
 
-- 코드 변경 분석
-- AI 리뷰 생성
-- GitHub 기록 저장
+PR에 `ai-review:on` 라벨이 추가되면 리뷰 작업을 생성하며,
+Webhook 요청과 실제 리뷰 작업을 Redis Queue로 분리하여 외부 API 응답 지연이 Webhook 처리에 직접 영향을 주지 않도록 구성했습니다.
+
+또한 GitHub / OpenAI와 같은 외부 시스템 연동 과정에서 발생할 수 있는
+**중복 요청, 일시적 API 실패, 부분 실패, 서버 중단 상황**을 고려해 안정성을 개선했습니다.
 
 ---
 
@@ -25,17 +27,12 @@ GPT 기반 코드 리뷰를 자동 생성해 PR 댓글과 리뷰 로그로 저�
 ---
 
 ## 🚀 주요 기능
-- 🔔 GitHub Webhook 기반 PR 이벤트 수신
-- 🏷️ `ai-review:on` 라벨 추가 이벤트 감지 및 리뷰 트리거
-- 🔍 변경된 코드(diff) 분석
-- 🤖 GPT 기반 코드 리뷰 자동 생성
-- 💬 PR 댓글 자동 등록
-- 📝 리뷰 로그 파일 자동 저장
-- 🔐 GitHub Webhook Signature 검증
-- 🚫 Redis 기반 중복 리뷰 요청 방지
-- 📥 Redis Queue 기반 리뷰 작업 처리
-- 📊 리뷰 작업 상태 관리 (진행중 / 성공 / 실패)
-- 🔁 GitHub / OpenAI API 응답 실패 시 재시도
+
+- 🔔 GitHub Webhook 기반 PR 리뷰 자동화
+- 🤖 PR diff 분석 및 GPT 코드 리뷰 생성
+- 💬 PR 댓글 및 리뷰 로그 자동 저장
+- 📥 Redis Queue 기반 리뷰 작업 분리 및 중복 요청 방지
+- 🔐 Webhook 검증, API Retry, 부분 실패 대응을 통한 외부 연동 안정화
 
 ---
 
@@ -44,15 +41,19 @@ GPT 기반 코드 리뷰를 자동 생성해 PR 댓글과 리뷰 로그로 저�
 ### **Backend**
   ![Java](https://img.shields.io/badge/Java-21-007396?style=for-the-badge&logo=openjdk&logoColor=white)
   ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)
+
 ### **API**
   ![OpenAI](https://img.shields.io/badge/OpenAI_API-412991?style=for-the-badge&logo=openai&logoColor=white)
   ![GitHub API](https://img.shields.io/badge/GitHub_REST_API-181717?style=for-the-badge&logo=github&logoColor=white)
+
 ### **Integration**
   ![Webhook](https://img.shields.io/badge/GitHub_Webhook-F05032?style=for-the-badge&logo=github&logoColor=white)
+
+### **Data / Queue**
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+
 ### **Networking**
   ![ngrok](https://img.shields.io/badge/ngrok-1F1E37?style=for-the-badge&logo=ngrok&logoColor=white)
-### Database / Cache
-![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 
 ---
 
@@ -64,395 +65,645 @@ GPT 기반 코드 리뷰를 자동 생성해 PR 댓글과 리뷰 로그로 저�
 
 ![img_5.png](src/main/resources/static/images/img_5.png)
 
-1) `ai-review:on` 라벨 추가 이벤트 수신
-2) Webhook 서명 검증 및 리뷰 대상 라벨 확인
-3) Redis dedup key로 중복 요청 방지
-4) `review:queue`에 리뷰 작업 저장 후 `202 Accepted` 응답
-5) `ReviewJobWorker`가 Queue에서 작업 조회 후 `review:queue:processing`으로 이동
-6) diff 분석<br>![img_1.png](src/main/resources/static/images/img_1.png)<br><br>
-7) GPT 요청 및 리뷰 생성
-8) GitHub 댓글 등록<br>![img.png](src/main/resources/static/images/img.png)<br><br>
-9) 로그 파일 저장<br>
-![img_2.png](src/main/resources/static/images/img_2.png)<br><br>
-![img_3.png](src/main/resources/static/images/img_3.png)<br><br>
-- `action=labeled`와 `ai-review:on` 라벨 기준 리뷰 트리거
-- repo + PR + headSha + label 기준 상태 관리
+### 현재 구조
+
+```text
+GitHub Webhook
+      ↓
+HMAC Signature 검증
+      ↓
+X-GitHub-Event / 리뷰 대상 이벤트 확인
+      ↓
+Redis 중복 요청 확인
+      ↓
+Redis Queue에 Review Job 저장
+      ↓
+202 Accepted
+      ↓
+Webhook 요청 종료
+
+----------------------------
+
+ReviewJobWorker
+      ↓
+review:queue
+      ↓
+review:queue:processing
+      ↓
+RUNNING
+      ↓
+GitHub API - PR diff 조회
+      ↓
+OpenAI API - 코드 리뷰 생성
+      ↓
+┌─────────────────┬─────────────────┐
+│ PR 댓글 등록     │ 리뷰 파일 저장    │
+└─────────────────┴─────────────────┘
+                            ↓
+                   ┌────────┴────────┐
+                   │                 │
+               History           latest.md
+                   │                 │
+                   └────────┬────────┘
+                            ↓
+                 부분 실패 시 실패 Task Retry
+                            ↓
+             SUCCESS / PARTIAL_FAILED / FAILED
+```
+
+전체 처리 과정은 다음과 같습니다.
+
+1. `ai-review:on` 라벨이 추가된 PR Webhook 수신
+2. HMAC Signature와 GitHub 이벤트 종류 검증
+3. 리뷰 대상 이벤트 및 브랜치 확인
+4. Redis key를 이용한 중복 요청 방지
+5. 리뷰에 필요한 Job 정보를 Redis Queue에 저장
+6. 실제 리뷰 완료를 기다리지 않고 `202 Accepted` 반환
+7. `ReviewJobWorker`가 Queue의 Job을 Processing Queue로 이동
+8. GitHub API를 통해 PR diff 조회<br>![img_1.png](src/main/resources/static/images/img_1.png)<br><br>
+9. OpenAI API를 통해 리뷰 생성
+10. PR 댓글 등록과 리뷰 파일 저장 병렬 처리<br>![img.png](src/main/resources/static/images/img.png)<br><br>
+11. 리뷰 파일 저장 내부에서 History / Latest 저장 병렬 처리<br>
+    ![img_2.png](src/main/resources/static/images/img_2.png)<br><br>
+    ![img_3.png](src/main/resources/static/images/img_3.png)<br><br>
+12. 부분 실패 발생 시 실패한 작업만 선택적으로 재시도
+13. 최종 처리 결과를 Redis에 상태로 저장
+
+Webhook 요청을 처리하는 Thread는 외부 API 호출이 끝날 때까지 기다리지 않고
+Redis에 Job을 정상적으로 저장한 뒤 종료됩니다.
+
+실제 외부 API 호출은 별도의 Worker 흐름에서 수행됩니다.
 
 ---
 
 ## 👨‍💻 리뷰 저장 구조
-- 브랜치: `auto-comment-logs`
-- 경로: `reviews/`<br>
-  &emsp;&emsp;&emsp;&emsp;&emsp;└── `pr-{번호}/`<br>
-  &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;├── `latest.md`<br>
-  &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;└── `{날짜}/{시간}.md`<br>
 
+리뷰 결과는 `auto-comment-logs` 브랜치에 저장합니다.
 
-- 최신 리뷰 + 히스토리 동시 관리
+```text
+reviews/
+└── pr-{PR 번호}/
+    ├── latest.md
+    └── {날짜}/
+        └── {시간}.md
+```
+
+- `latest.md`
+    - 해당 PR의 가장 최근 리뷰 저장
+- `{날짜}/{시간}.md`
+    - 리뷰 실행 시점별 History 보관
+
+두 파일은 서로 독립적인 작업이기 때문에 병렬로 저장합니다.
 
 ---
 
-## ⚡ 트러블슈팅
+# ⚡ 트러블슈팅
+
+## 1. Webhook 요청에서 외부 API를 직접 호출하던 문제
 
 ### 🔍 문제 상황
 
-GitHub Webhook을 통해 Pull Request 이벤트를 수신하고,
-`ai-review:on` 라벨이 추가된 PR에 대해 자동으로 리뷰를 생성하는 기능을 구현했다.
+초기 구조에서는 **하나의 Webhook 요청** 안에서 다음 **작업을 순차적**으로 수행했습니다.
+즉, 하나의 요청 흐름에서 모든 외부 API 호출이 수행되는 구조
 
-초기 구조에서는 webhook 요청을 처리하는 과정에서 다음 작업을 **동기적으로 순차 실행**했다.
-
-* GitHub API를 통한 PR diff 조회
-* OpenAI API를 통한 코드 리뷰 생성
-* GitHub PR 댓글 등록
-* 리뷰 결과 파일 저장 (GitHub Repository)
-
-즉, 하나의 요청 흐름에서 모든 외부 API 호출이 수행되는 구조이다.
-
----
-
-### ⚠️ 무슨 문제가 생길 수 있을지 고민
-
-* OpenAI API 호출의 응답 시간이 길어질 수도 있어서 전체 응답시간이 길어질 수 있음
-* GitHub API가 여러 번 호출되며 네트워크 지연이 발생할 수 있음
-
-GitHub Docs에 따르면 GitHub Webhook은 **10초 이내에 2XX 응답을 반환해야 안정적으로 처리**된다고 한다.
-(https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
-
-따라서, 현재 구조는 webhook delivery 실패 가능성이 있다.
-
----
-
-### 🧠 원인 분석
-
-예상되는 병목의 원인을 찾아보았다.
-
-현재 `review()` 메서드가 실행되면, 하나의 요청 안에서 여러 외부 API 호출이 순차적으로 수행된다.
-
-- `githubDiffService.getPullRequestDiff(...)`
-  - GitHub REST API를 호출하여 PR diff 조회
-- `gptReviewService.generateReview(diff)`
-  - OpenAI API를 호출하여 리뷰 생성
-- `githubCommentService.createComment(...)`
-  - GitHub PR 댓글 등록 (POST)
-- `githubFileService.saveReviewFile(...)`
-  - GitHub Repository에 리뷰 파일 저장 (POST)
-
-`review()` 내부에서
-
-    **diff 조회 → OpenAI 호출 → 댓글 등록 → 파일 저장**
-
-과정이 하나의 요청 스레드에서 순차적으로 실행되고 있다.
-
-이로 인해:
-- 외부 API 응답 속도에 따라 전체 처리 시간이 쉽게 늘어날 수 있다는 문제
-- 현재 구조상 하나의 API라도 지연되면 다음 작업들은 모두 대기
-- webhook 응답 지연 가능성 발생
-
-따라서, **외부 API 성능**에 영향을 받음.
-
----
-
-### 🛠 해결 방법
-
-문제를 해결하기 위해 `비동기 처리`와`병렬 처리`를 도입하였다.
-
-- 비동기: webhook 요청에 대해 10초 안에 2xx으로 응답하기 위해 사용
-- 병렬처리: PR 리뷰 등록 및 저장을 독립적으로 실행하기 위해 사용 (작업 처리 시간 단축)
-
----
-
-### 🔁 개선 구조
-
-#### 기존 구조 (동기)
-```
-Webhook 요청 → diff 조회 → OpenAI 호출 → 댓글 등록 → 리뷰 저장 → 응답
-```
----
-#### 개선 구조 (비동기 + 병렬 처리)
-```
-Webhook 요청 → 이벤트 검증 → 202 Accepted 응답
-                                ↓
-                           reviewAsync()
-                                ↓
-                    diff 조회 → OpenAI 호출
-                                ↓
-               ┌──────── 댓글 등록
-               └──────── 리뷰 파일 저장
-```
-
-#### 현재 개선 구조 (Redis Queue + 중복 방지 + 상태 관리)
-```
+```text
 Webhook 요청
-     ↓
-GitHub Signature 검증
-     ↓
-ai-review:on 라벨 이벤트 확인
-     ↓
-Redis 중복 요청 확인
-     ↓
-Redis Queue 저장
-     ↓
-202 Accepted 응답
+    ↓
+GitHub diff 조회
+    ↓
+OpenAI 리뷰 생성
+    ↓
+GitHub 댓글 등록
+    ↓
+리뷰 파일 저장
+    ↓
+Webhook 응답
+```
 
-     이후 별도 작업 흐름
+GitHub / OpenAI API는 네트워크 I/O가 포함된 외부 시스템이기 때문에
+응답 시간이 길어질 경우 요청 Thread 역시 계속 대기하게 됩니다.
+
+특히 다음과 같은 문제가 발생할 수 있다고 판단했습니다.
+
+- OpenAI 응답 지연에 따라 Webhook 응답 시간 증가
+- 하나의 외부 API가 지연되면 뒤의 작업도 모두 대기
+- 동시에 여러 Webhook이 들어올 경우 요청 Thread가 장시간 점유될 가능성
+- GitHub Webhook의 빠른 응답 요구사항을 만족하지 못할 가능성
+
+
+GitHub Docs에 따르면 GitHub Webhook은 서버가 **10초 이내에 2XX 응답을 반환**할 것을 권장합니다.
+(https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
+응답이 지나치게 늦으면 Delivery 처리에 문제가 발생할 수 있습니다.
+
+### 해결
+
+Webhook 요청 처리와 실제 리뷰 실행을 **Redis Queue를 이용해 분리**했습니다.
+
+```text
+Webhook Thread
+
+요청 검증
+   ↓
+Redis Queue에 Job 저장
+   ↓
+202 Accepted
+   ↓
+Thread 반환
+
 
 ReviewJobWorker
-     ↓
-Redis Queue에서 작업 조회
-     ↓
-작업 상태 RUNNING 저장
-     ↓
-diff 조회 → OpenAI 리뷰 생성
-     ↓
-┌──────── GitHub 댓글 등록
-└──────── 리뷰 파일 저장
-     ↓
-작업 상태 SUCCESS / FAILED 저장
+
+Redis Queue에서 Job 조회
+   ↓
+GitHub / OpenAI API 호출
+   ↓
+리뷰 결과 처리
 ```
 
-Redis를 적용하면서 webhook 요청 흐름은 작업을 큐에 넣고 빠르게 응답하는 역할만 담당하도록 분리하였다.
-이때 리뷰 대상은 PR에 추가된 라벨이 `ai-review:on`인지 확인해서 판단한다.
-실제 리뷰 생성은 `ReviewJobWorker`가 Redis Queue에서 작업을 꺼내 처리한다.
+Redis I/O 자체를 Non-Blocking으로 구현한 것은 아니고, 시간이 오래 걸리는 Blocking 외부 API 작업을
+**HTTP 요청 처리 경로에서 분리**하여 Webhook 요청 Thread가 외부 API 응답을 기다리지 않도록 했습니다.
 
-이 구조를 통해 중복 webhook 요청을 막고, 리뷰 작업의 진행 상태를 Redis에 저장할 수 있게 되었다.
+현재 Worker는 하나의 Review Job을 완료한 뒤 다음 Job을 처리하는 구조이므로
+Job 단위 처리는 순차적입니다.
 
-
-## ⚙️구현 방식:
-
-1. 비동기 처리 (초기 개선)
-   - WebhookController는 이벤트 검증 후 AsyncReviewService.reviewAsync()를 호출하고 즉시 응답 반환
-   - Spring의 @Async를 사용하여 리뷰 파이프라인을 별도 스레드에서 실행
-   - 전용 ThreadPoolTaskExecutor를 구성하여 비동기 작업 관리
-
-    → webhook 응답 경로에서 외부 API 호출을 제거
-
-현재는 이 구조를 Redis Queue 기반으로 한 번 더 개선하였다.
-WebhookController는 리뷰 작업을 Redis Queue에 저장하고, ReviewJobWorker가 별도 흐름에서 작업을 처리한다.
+그렇지만, Worker가 Job을 처리하는 동안 새로운 Webhook 요청은 계속 Redis Queue에 저장할 수 있습니다.
 
 ---
 
-2. 병렬 처리
+## 2. 독립적인 외부 API 작업의 병렬 처리
 
-- GitHub 댓글 등록
-- 리뷰 파일 저장
+PR diff 조회와 OpenAI 리뷰 생성은 의존 관계가 있습니다.
 
-동일한 리뷰 데이터를 기반이지만, 서로 의존하지 않기 때문에 `CompletableFuture`를 활용하여 병렬 실행하도록 구현하였다.
-
-```
-// 두 작업을 동시에 실행하고
-CompletableFuture<Void> commentFuture = commentAsync(...);
-CompletableFuture<Void> saveFuture = saveAsync(...);
-
-// 모두 완료될 때까지 대기
-CompletableFuture.allOf(commentFuture, saveFuture).join();
+```text
+PR diff
+   ↓
+OpenAI Review
 ```
 
----
+OpenAI가 리뷰를 생성하려면 먼저 diff 결과가 필요하기 때문에 두 작업은 순차적으로 수행합니다.
 
-3. Redis 기반 작업 안정화
+반면 GPT 리뷰가 만들어진 이후의 다음 작업들은 서로 독립적입니다.
 
-- `ReviewJobQueueService`
-  - webhook에서 검증된 리뷰 작업을 Redis Queue에 저장
-  - 작업 처리 전 `review:queue`에서 `review:queue:processing`으로 이동
-  - 작업 완료 후 processing queue에서 제거
-
-- `ReviewJobWorker`
-  - Redis Queue를 주기적으로 확인하여 리뷰 작업 실행
-  - 서버 재시작 시 processing queue에 남아 있던 작업을 다시 queue로 복구
-
-- `ReviewRequestDeduplicationService`
-  - 같은 PR, 같은 commit(headSha), 같은 label 요청이 반복될 경우 중복 처리 방지
-  - 라벨 이름까지 key에 포함하여 같은 커밋이라도 서로 다른 리뷰 트리거를 구분할 수 있도록 구성
-  - TTL을 사용하여 중복 방지 데이터가 영구적으로 쌓이지 않도록 관리
-
-- `ReviewJobStatusService`
-  - 리뷰 작업 상태를 `RUNNING`, `SUCCESS`, `FAILED`로 Redis에 저장
-  - 실패 시 에러 메시지도 함께 저장
-
----
-
-4. 안정성 개선
-
-- RestClient connect/read timeout 설정
-- GitHub / OpenAI API 응답 실패 시 재시도
-- GitHub webhook signature 검증
-- 댓글 등록과 리뷰 파일 저장의 부분 성공/실패 결과 기록
-
----
-
-### ✅ 개선 결과
-
-* webhook 요청 처리 시 즉시 응답이 가능하도록 구조 개선 
-* 외부 API 지연이 webhook 처리 성공 여부에 영향을 주지 않도록 분리
-* 댓글 등록 및 파일 저장 작업을 병렬화하여 **전체 처리 시간 단축**
-* Redis Queue를 사용하여 webhook 응답과 리뷰 작업 처리를 분리
-* Redis TTL을 사용하여 중복 요청 정보와 작업 상태 정보를 짧은 수명의 데이터로 관리
-* API 응답 지연이나 일시적 실패에 대비하기 위해 timeout과 retry 정책 추가
-
----
-
-## ⚠️ 한계 및 추가 개선 사항
-
-- ~~비동기 작업 실패 시 작업 상태 추적 구조 필요~~
-  - Redis를 사용하여 `RUNNING`, `SUCCESS`, `FAILED` 상태를 저장하도록 개선
-- ~~중복 webhook 처리 방지 미구현~~
-  - Redis TTL 기반으로 같은 PR, 같은 commit(headSha), 같은 label 요청을 중복 처리하지 않도록 개선
-
-→ Redis는 짧은 수명의 중복 방지, 작업 큐, 상태 관리에 사용하고 DB는 장기 이력 저장에 사용하는 구조로 확장할 수 있을까?
-
-- Redis: 
-  - webhook 중복 요청 방지
-  - 작업 큐 관리
-  - 짧은 수명의 상태값 저장
-
-  
-- DB:
-  - 작업 이력 저장
-  - 성공 / 실패 상태 관리
-  - 리뷰 생성 결과 및 로그 조회
-
-### 새로 남은 개선 사항
-
-- 실패한 리뷰 작업을 다시 Redis Queue에 넣는 job retry 구조
-- 재시도 횟수를 초과한 작업을 별도로 보관하는 dead-letter queue 구조
-- Redis에 저장한 작업 상태를 조회할 수 있는 API
-- 장기적인 작업 이력과 리뷰 결과 조회를 위한 DB 저장 구조
-
----
-
-## Redis 중복 리뷰 요청 방지
-
-### Redis를 사용하기 위해 추가한 항목
-
-1. Redis 연결 설정 추가
-   - Spring Boot Redis 의존성과 `spring.data.redis` 설정을 추가하여 Redis를 사용할 수 있도록 구성
-
-2. 중복 리뷰 요청 방지
-   - 같은 PR, 같은 commit(headSha), 같은 label 요청이 반복될 경우 Redis key로 중복 처리 방지
-   - 현재 리뷰 트리거 라벨은 `ai-review:on`
-
-3. 리뷰 작업 상태 관리
-   - Redis에 리뷰 작업 상태를 `RUNNING`, `SUCCESS`, `FAILED`로 저장
-
-4. 리뷰 작업 Queue 처리
-   - webhook 요청은 Redis Queue에 작업만 저장하고 빠르게 응답
-   - `ReviewJobWorker`가 Queue에서 작업을 꺼내 실제 리뷰 생성 처리
-
-5. 처리 중 작업 복구
-   - 서버 재시작 시 `processing queue`에 남아 있던 작업을 다시 대기 Queue로 복구
-
-6. 남은 개선 사항
-   - 실패 작업 재시도 로직
-   - 재시도 횟수를 초과한 작업을 보관하는 dead-letter queue 구조
-
----
-
-### 문제 상황
-
-GitHub Webhook은 네트워크 문제나 응답 지연 상황에서 동일 이벤트가 다시 전달될 수 있다.
-
-따라서 중복 요청을 막지 않으면 같은 PR, 같은 commit에 대해 리뷰 생성 로직이 여러 번 실행될 수 있다.
-
+```text
+             GPT Review
+                 ↓
+        ┌────────┴────────┐
+        │                 │
+    PR Comment        Review File
 ```
-Webhook 수신
-     ↓
-  리뷰 생성
 
-  (재전송)
+따라서 `CompletableFuture`와 별도 Executor를 이용하여 병렬로 실행했습니다.
 
-Webhook 수신
-     ↓
-  리뷰 생성
+리뷰 파일 저장 내부에서도:
+
+```text
+          Review File
+               ↓
+        ┌──────┴──────┐
+        │             │
+     History        Latest
+```
+
+History 저장과 `latest.md` 저장을 병렬 처리합니다.
+
+이를 통해, 서로 의존하지 않는 외부 API 작업을 순차적으로 기다리지 않고 동시에 처리할 수 있도록 했습니다.
+
+---
+
+## 3. 병렬 처리의 부분 실패 문제
+
+병렬 처리를 적용한 뒤에는 테스트를 해보며 새로운 문제를 발견했습니다.
+
+예를 들어:
+
+```text
+PR Comment     SUCCESS
+Review File    FAILED
+```
+
+처럼 한 작업만 실패할 경우, 
+단순히 예외 발생 여부만 확인하여 일부 작업이 실패했음에도 전체 작업을 `SUCCESS`로 처리되고 있었습니다.
+
+또한 Review File 내부에서도:
+
+```text
+History    SUCCESS
+Latest     FAILED
+```
+
+와 같은 부분 실패가 발생할 수 있습니다.
+
+### 해결
+
+각 병렬 작업의 결과를 별도의 결과 객체로 관리했습니다.
+
+```text
+Comment / ReviewFile
+        ↓
+DispatchResult
+
+History / Latest
+        ↓
+ReviewFileSaveResult
+```
+
+각 작업은 `DispatchTaskResult`를 통해 성공/실패 여부와 에러 정보를 반환합니다.
+
+```java
+DispatchResult dispatchResult = new DispatchResult(
+    commentFuture.join(),
+    saveReviewFuture.join()
+);
+```
+
+부분 실패가 발생하면 이미 성공한 작업은 다시 실행하지 않고
+**실패한 작업만 선택적으로 재시도**합니다.
+
+예를 들어:
+
+```text
+1차 실행
+
+Comment       SUCCESS
+ReviewFile    FAILED
+
+        ↓
+
+재시도
+
+Comment       실행하지 않음
+ReviewFile    다시 실행
+```
+
+Review File 내부에서도 같은 방식을 적용했습니다.
+
+```text
+1차 실행
+
+History    SUCCESS
+Latest     FAILED
+
+        ↓
+
+재시도
+
+History    실행하지 않음
+Latest     다시 실행
+```
+
+최종 결과에 따라 Job 상태를 구분합니다.
+
+```text
+모든 작업 성공
+→ SUCCESS
+
+리뷰 생성까지 완료했지만 후처리 일부가 Retry 후에도 실패
+→ PARTIAL_FAILED
+
+diff 조회 / OpenAI 호출 등 리뷰 실행 자체를 완료하지 못함
+→ FAILED
 ```
 
 ---
 
-### 해결 방법
+# ⚙️ 주요 구현 방식
 
-Redis를 이용하여 이미 처리 중인 리뷰 요청을 저장하였다.
-같은 PR, 같은 commit, 같은 label 요청이 다시 들어오면 중복 요청으로 판단하고 리뷰 작업을 새로 만들지 않는다.
+## 1. Redis Queue
 
+### ReviewJobQueueService
+
+Webhook에서 검증된 리뷰 Job을 Redis List에 저장합니다.
+
+```text
+review:queue
 ```
-(Key 예시)
+
+Worker가 Job을 가져올 때 바로 삭제하지 않고:
+
+```text
+review:queue
+       ↓
+review:queue:processing
+```
+
+으로 이동합니다.
+
+작업이 완료된 이후에 Processing Queue에서 제거합니다.
+
+이를 통해 서버가 리뷰를 처리하는 중 종료되더라도
+Job 자체가 즉시 사라지지 않도록 했습니다.
+
+애플리케이션 재시작 시 Processing Queue에 남아 있던 Job을 다시 대기 Queue로 복구합니다.
+
+---
+
+## 2. Redis 기반 중복 요청 방지
+
+GitHub Webhook은 동일 이벤트가 다시 전달될 수 있습니다.
+
+같은 요청을 그대로 처리하면 동일 PR과 동일 Commit에 대해
+OpenAI 리뷰가 여러 번 생성될 수 있습니다.
+
+이를 방지하기 위해 다음 정보를 Redis key에 포함했습니다.
+
+```text
 review:dedup:{repo}:{prNumber}:{headSha}:{label}
+```
 
-(예시)
+예:
+
+```text
 review:dedup:hamplz/autocomment:21:abc123:ai-review:on
-
 ```
 
+`headSha`를 포함한 이유는 같은 PR에도 새로운 Commit이 Push될 수 있기 때문입니다.
 
----
+```text
+같은 PR + 같은 Commit
+→ 중복 요청으로 처리
 
-### 왜 headSha를 사용했는가?
-
-PR 번호만 기준으로 중복 요청을 막으면 다음 상황을 처리할 수 없다.
-
-```
-PR #21
-↓
-리뷰 완료
-↓
-새 커밋 Push
-↓
-다시 리뷰 필요
+같은 PR + 새로운 Commit
+→ 새로운 리뷰 허용
 ```
 
-하지만, `review:dedup:{repo}:21`처럼 PR 번호만 사용하면 새로운 커밋이 push되어도 같은 PR이라는 이유로 중복 요청으로 처리된다.
+중복 방지 정보는 영구 저장할 필요가 없기 때문에 TTL을 적용했습니다.
 
-따라서, Redis key에 `headSha`를 포함하여
+이를 통해:
 
-```
-같은 커밋 → 중복 방지
-새로운 커밋 → 리뷰 허용
-```
-
-구조를 만들었다.
-
----
-
-### TTL을 사용한 이유
-
-중복 방지 정보는 영구적으로 저장할 필요가 없다.
-리뷰 요청의 중복 여부는 일정 시간 동안만 의미가 있고, 오래된 key가 계속 남아 있으면 Redis 메모리만 차지하게 된다.
-
-따라서, Redis TTL을 사용하여 일정 시간이 지나면 자동 삭제되도록 구성하였다.
-
-- 불필요한 데이터 누적 방지
+- 불필요한 Redis 데이터 누적 방지
+- 일정 시간 이후 동일 조건에 대한 재처리 허용
 - 짧은 수명의 상태 데이터 관리
-- Redis 메모리 효율성 확보
+
+가 가능하도록 했습니다.
 
 ---
 
-## 💡 배운 점
-- webhook과 같은 외부 시스템은 응답 시간 제약을 고려한 설계가 필수적이라는 점을 이해했다.
-- 네트워크 I/O 대기 시간으로 인해 요청 스레드가 블로킹되며 전체 처리 시간이 증가하는 병목 구조를 경험했다.
-- 비동기와 병렬 처리는 서로 다른 개념이며, 적절히 조합할 수 있다는 것을 알게되었다.
+## 3. 작업 상태 관리
 
-→ Blocking 과 Non-Blocking에 대해서도 공부해야겠다.
+`ReviewJobStatusService`를 통해 Redis에 Review Job의 상태를 저장합니다.
+
+```text
+RUNNING
+SUCCESS
+PARTIAL_FAILED
+FAILED
+```
+
+상태의 의미는 다음과 같습니다.
+
+| 상태 | 의미 |
+|---|---|
+| `RUNNING` | Review Job 처리 중 |
+| `SUCCESS` | 모든 작업이 정상적으로 완료됨 |
+| `PARTIAL_FAILED` | 리뷰는 생성했지만 일부 후처리가 Retry 후에도 실패 |
+| `FAILED` | diff 조회, OpenAI 호출 등 Job 자체가 완료되지 못함 |
+
+실패한 경우 오류 정보도 함께 저장하며,
+작업 상태 역시 영구적인 데이터가 아니기 때문에 TTL을 적용합니다.
 
 ---
-## ▶ 실행 방법
 
-### 1) 환경 변수 설정
-- `OPENAI_API_KEY`
-- `GITHUB_TOKEN`
-  - 권한
-    - Pull Requests: Read and Write
-    - Contents: Read and Write
+## 4. 외부 API Retry
 
-### 2) ngrok 연결
+GitHub / OpenAI와 같은 외부 시스템은
+일시적인 네트워크 장애나 서버 오류가 발생할 수 있습니다.
+
+따라서 외부 API 호출에 다음 정책을 적용했습니다.
+
+- Connect Timeout
+- Read Timeout
+- 최대 3회의 API Retry
+- `429 Too Many Requests`
+- `5xx Server Error`
+- 네트워크 계층의 일시적 오류
+
+API 단위 Retry가 모두 실패한 이후에도
+병렬 후처리 작업에서는 실패한 Task만 한 번 더 선택적으로 수행합니다.
+
+따라서 Retry 범위를 다음과 같이 구분하고 있습니다.
+
+```text
+API Retry
+→ 하나의 외부 API 호출에 대한 재시도
+
+Task Retry
+→ Comment / ReviewFile / History / Latest 작업 단위 재시도
+
+Job Retry
+→ 전체 Review Job 재실행
+→ 현재 미구현
 ```
-ngrok http 8080
+
+---
+
+## 5. Webhook 검증
+
+외부에서 전달되는 Webhook 요청을 그대로 신뢰하지 않도록 다음 검증을 적용했습니다.
+
+### HMAC Signature 검증
+
+GitHub의 `X-Hub-Signature-256` Header와
+Webhook Secret을 이용하여 HMAC-SHA256 Signature를 검증합니다.
+
+Webhook Secret이 설정되지 않은 경우 요청을 통과시키지 않는
+**fail-closed 방식**으로 구성했습니다.
+
+### Event Header 검증
+
+`X-GitHub-Event` Header를 확인하여
+`pull_request` 이벤트만 리뷰 처리 대상으로 전달합니다.
+
+이후 `WebhookEventFilter`에서:
+
+- `action=labeled`
+- `ai-review:on`
+- 리뷰 로그 브랜치 제외
+
+등 실제 리뷰 실행 조건을 추가로 확인합니다.
+
+HMAC Signature는 요청의 출처와 Body의 무결성을 검증하고,
+Event Header와 Payload Filter는 요청의 처리 대상 여부를 판단합니다.
+
+---
+
+# ✅ 개선 결과
+
+초기 구조에서 현재 구조로 개선하면서 다음 문제를 해결했습니다.
+
+| 구분 | 초기 구조 | 현재 구조 |
+|---|---|---|
+| Webhook 응답 처리 | GitHub / OpenAI 등 외부 API 작업이 모두 끝난 뒤 응답 | Redis Queue에 Job 저장 후 `202 Accepted` 반환 |
+| 실제 리뷰 작업 실행 | Webhook 요청 Thread에서 직접 실행 | `ReviewJobWorker`가 Queue에서 Job을 가져와 별도 처리 |
+| PR 댓글 등록 + 리뷰 파일 저장 | 두 작업을 순차 실행 | 서로 독립적인 작업으로 판단하여 병렬 실행 |
+| History + latest.md 저장 | 두 파일 저장을 순차 실행 | 별도 Executor에서 병렬 실행 |
+| 병렬 작업 부분 실패 | 일부 실패해도 상위에서 전체 성공으로 판단할 가능성 존재 | 작업별 결과를 별도로 관리하여 부분 실패 식별 |
+| 실패 작업 재시도 | 외부 API 호출 자체에 대한 Retry만 존재 | API Retry + 실패한 Comment / ReviewFile / History / Latest Task만 선택적으로 Retry |
+| 처리 중 서버 종료 | 처리 중이던 Job이 유실될 가능성 존재 | Processing Queue에 보관하고 재시작 시 대기 Queue로 복구 |
+| 작업 상태 관리 | `SUCCESS / FAILED` 중심 | `RUNNING / SUCCESS / PARTIAL_FAILED / FAILED`로 세분화 |
+
+
+현재 외부 API 호출 자체는 `RestClient` 기반 Blocking I/O입니다.
+
+즉, 시스템 전체를 Non-Blocking으로 변경한 것이 아니라
+**시간이 오래 걸리는 Blocking 외부 API 작업을 Webhook 요청 처리 경로에서 분리하고,
+하나의 Review Job 내부에서 서로 의존하지 않는 후처리 작업을 별도의 Executor를 통해 병렬 처리하도록 구성**했습니다.
+
+현재 `ReviewJobWorker`는 Job을 하나씩 순차적으로 소비하며,
+병렬 처리는 `Comment / ReviewFile`, `History / Latest`처럼
+하나의 Job 내부에서 서로 독립적인 작업에 적용되어 있습니다..
+
+---
+
+# ⚠️ 한계 및 추가 개선 사항
+
+현재 구조에도 다음과 같은 한계가 있습니다.
+
+### 1. Job-level Retry
+
+GitHub Diff 조회 또는 OpenAI API 호출이
+API Retry 이후에도 최종적으로 실패하면 Job은 `FAILED` 처리됩니다.
+
+현재는 실패한 전체 Job을 Redis Queue에 다시 넣는 구조는 구현하지 않았습니다.
+
+향후:
+
+```text
+FAILED
+   ↓
+Job Retry
+   ↓
+Retry 횟수 초과
+   ↓
+Dead Letter Queue
 ```
-### 3) Redis 실행
+
+형태로 확장할 수 있습니다.
+
+### 2. Worker 처리량
+
+현재 `ReviewJobWorker`는 하나의 Job을 완료한 뒤
+다음 Job을 가져오는 순차 소비 방식입니다.
+
+순간적인 요청 증가는 Redis Queue가 완충할 수 있지만,
+장기간:
+
+```text
+Job 유입량 > Worker 처리량
 ```
+
+인 상황이 지속되면 Queue가 계속 증가할 수 있습니다.
+
+향후 제한된 크기의 Worker Thread Pool을 이용해
+여러 Review Job을 동시에 처리하도록 확장할 수 있습니다.
+
+### 3. 외부 Side Effect의 멱등성
+
+GitHub Comment와 같은 POST 요청은
+서버에서는 성공했지만 응답을 받지 못한 상황에서 Retry하면
+동일 댓글이 중복 생성될 가능성이 있습니다.
+
+따라서 장기적으로는:
+
+- 요청 식별자
+- 기존 댓글 검색
+- 동일 Comment Update
+- 멱등성 Key
+
+등을 이용해 중복 Side Effect를 방지할 필요가 있습니다.
+
+### 4. Job / Review 장기 저장
+
+현재 Redis는 다음과 같은 짧은 수명의 데이터에 사용합니다.
+
+- 중복 요청 정보
+- Review Job Queue
+- Processing Queue
+- 작업 상태
+
+향후 RDB를 추가하면:
+
+- 작업 이력
+- 리뷰 결과
+- 장기적인 성공 / 실패 기록
+- 통계 및 조회 기능
+
+을 영구적으로 관리할 수 있습니다.
+
+### 5. GitHub Diff URL 검증
+
+현재 Webhook Payload에서 전달받은 `diff_url`을 이용해 PR diff를 조회합니다.
+
+향후에는 외부에서 전달받은 URL을 그대로 사용하는 대신
+검증된 `repoFullName`과 `prNumber`를 이용해
+신뢰 가능한 GitHub API Endpoint를 직접 구성하도록 개선할 수 있습니다.
+
+---
+
+# 💡 배운 점
+
+# 💡 배운 점
+
+- 초기에는 Webhook 요청 안에서 GitHub Diff 조회, OpenAI 리뷰 생성, 댓글 등록, 리뷰 파일 저장까지 모두 수행하여 외부 API 응답 시간이 Webhook 응답 시간에 그대로 포함되었습니다. 이를 Redis Queue 기반 구조로 변경해 Webhook에서는 Job 저장 후 `202 Accepted`를 반환하고, 실제 리뷰 작업은 Worker가 처리하도록 분리하여 **Webhook 요청 Thread가 외부 API 응답을 기다리는 시간을 제거했습니다.**
+
+- GPT 리뷰 생성 이후의 `PR 댓글 등록`과 `리뷰 파일 저장`은 서로 의존하지 않는 작업이므로 별도의 Executor를 이용해 병렬 처리했습니다. 기존에는 두 작업의 처리 시간이 순차적으로 합산되는 구조였지만, 병렬 처리 후에는 **두 작업 중 더 오래 걸리는 작업의 완료 시간을 중심으로 기다리는 구조로 변경하여 후처리 대기 시간을 줄였습니다.**
+
+- 리뷰 파일 저장 내부의 `History`와 `latest.md` 저장도 동일하게 병렬 처리하여, 파일 저장 작업 역시 순차 처리보다 전체 대기 시간이 짧아질 수 있도록 개선했습니다. 별도의 성능 측정을 수행하지 않아 정확한 감소율을 제시하지는 않았지만, 독립적인 I/O 작업을 순차 실행하던 구조를 병렬 실행 구조로 변경했습니다.
+
+- 병렬 처리 적용 후 `Comment 성공 / ReviewFile 실패`, `History 성공 / Latest 실패`처럼 일부 작업만 실패하는 문제를 테스트 과정에서 발견했습니다. 각 작업 결과를 `DispatchTaskResult`, `DispatchResult`, `ReviewFileSaveResult`로 분리해 관리하고, **전체 작업을 다시 실행하지 않고 실패한 작업만 선택적으로 재시도하도록 개선했습니다.**
+
+- 작업 상태를 `SUCCESS / FAILED`만으로 관리하던 구조에서 `PARTIAL_FAILED`를 추가하여, 리뷰 생성 자체가 실패한 경우와 리뷰 생성 이후 일부 후처리만 실패한 경우를 구분할 수 있도록 개선했습니다.
+
+- Redis Queue에서 작업을 바로 삭제하지 않고 Processing Queue로 이동한 뒤 완료 시 제거하도록 구성하여, 애플리케이션이 작업 도중 종료되더라도 재시작 시 처리 중이던 Job을 다시 Queue로 복구할 수 있도록 했습니다.
+
+- 외부 API의 일시적 장애에는 API 단위 Retry를 적용하고, 병렬 처리의 부분 실패에는 Task 단위 Retry를 적용하면서 **실패 범위에 따라 재시도 범위를 구분했습니다.** 전체 Job Retry와 외부 Side Effect의 완전한 멱등성 보장은 추가 개선 과제로 남겨두었습니다.
+
+---
+
+# ▶ 실행 방법
+
+## 1. 환경 변수 설정
+
+```text
+OPENAI_API_KEY
+GITHUB_TOKEN
+GITHUB_WEBHOOK_SECRET
+```
+
+GitHub Token에는 프로젝트 동작에 필요한 Repository 권한이 필요합니다.
+
+- Pull Requests: Read and Write
+- Contents: Read and Write
+
+---
+
+## 2. Redis 실행
+
+```bash
 docker run -d --name redis -p 6379:6379 redis
 ```
 
-### 4) 애플리케이션 실행
+---
+
+## 3. 애플리케이션 실행
+
 ```bash
 ./gradlew bootRun
 ```
+
+---
+
+## 4. ngrok 연결
+
+```bash
+ngrok http 8080
+```
+
+발급된 HTTPS URL을 GitHub Webhook Endpoint에 등록합니다.
+
+```text
+https://{ngrok-domain}/webhook/github
+```
+
+Webhook 설정에는 애플리케이션의 `GITHUB_WEBHOOK_SECRET`과 동일한 Secret을 설정합니다.
 
 ---
