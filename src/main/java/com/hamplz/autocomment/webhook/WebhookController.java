@@ -18,6 +18,7 @@ import java.io.IOException;
 public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
+    private static final String PULL_REQUEST_EVENT = "pull_request";
     private static final String RESPONSE_INVALID_SIGNATURE = "invalid signature";
     private static final String RESPONSE_INVALID_PAYLOAD = "invalid payload";
     private static final String RESPONSE_IGNORED = "ignored";
@@ -56,7 +57,8 @@ public class WebhookController {
     @PostMapping("/github")
     public ResponseEntity<String> receive(
         @RequestBody byte[] payload,
-        @RequestHeader(value = "X-Hub-Signature-256", required = false) String signatureHeader
+        @RequestHeader(value = "X-Hub-Signature-256", required = false) String signatureHeader,
+        @RequestHeader(value = "X-GitHub-Event", required = false) String eventHeader
     ) {
 
         log.info(LOG_WEBHOOK_RECEIVED);
@@ -66,7 +68,18 @@ public class WebhookController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(RESPONSE_INVALID_SIGNATURE);
         }
 
+        if (eventHeader == null || eventHeader.isBlank()) {
+            return ResponseEntity.badRequest().body("invalid event");
+        }
+
+        if (!PULL_REQUEST_EVENT.equals(eventHeader)) {
+            log.info("GitHub webhook event ignored - {}", eventHeader);
+
+            return ResponseEntity.ok().body(RESPONSE_IGNORED);
+        }
+
         JsonNode parsedPayload;
+
         try {
             parsedPayload = objectMapper.readTree(payload);
         } catch (IOException e) {

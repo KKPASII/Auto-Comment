@@ -37,6 +37,9 @@ class WebhookControllerTest {
     private static final String REVIEW_BRANCH = "auto-comment-logs";
     private static final String REPOSITORY = "aaaa/auto-comment";
 
+    private static final String EVENT_HEADER = "X-GitHub-Event";
+    private static final String PULL_REQUEST_EVENT = "pull_request";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -231,18 +234,66 @@ class WebhookControllerTest {
         verifyNoInteractions(reviewJobQueueService);
     }
 
+    @Test
+    @DisplayName("pull_request가 아닌 이벤트는 무시한다")
+    void ignoreNonPullRequestEvent() throws Exception {
+        String payload = """
+        {
+          "ref": "refs/heads/main"
+        }
+        """;
+
+        performWebhook(
+            payload,
+            SIGNATURE_HEADER,
+            "push"
+        )
+            .andExpect(status().isOk())
+            .andExpect(content().string("ignored"));
+
+        verifyNoInteractions(reviewJobQueueService);
+        verifyNoInteractions(reviewRequestDeduplicationService);
+    }
+
+
+    @Test
+    @DisplayName("이벤트 헤더가 없으면 잘못된 요청으로 처리한다")
+    void InvalidRequestwithoutEventHeader() throws Exception {
+        String payload = """
+        {
+          "action": "labeled"
+        }
+        """;
+
+        performWebhookWithoutEventHeader(payload)
+            .andExpect(status().isBadRequest())
+            .andExpect(content().string("invalid event"));
+
+        verifyNoInteractions(reviewJobQueueService);
+        verifyNoInteractions(reviewRequestDeduplicationService);
+    }
+
     private ResultActions performWebhook(String payload) throws Exception {
-        return performWebhook(payload, SIGNATURE_HEADER);
+        return performWebhook(payload, SIGNATURE_HEADER, PULL_REQUEST_EVENT);
     }
 
     private ResultActions performWebhook(
         String payload,
         String signatureHeader
     ) throws Exception {
+        return performWebhook(payload, signatureHeader, PULL_REQUEST_EVENT);
+    }
+
+    private ResultActions performWebhook(
+        String payload,
+        String signatureHeader,
+        String eventHeader
+    ) throws Exception {
 
         return mockMvc.perform(post("/webhook/github")
             .contentType(MediaType.APPLICATION_JSON)
             .header("X-Hub-Signature-256", signatureHeader)
+            .header(EVENT_HEADER, eventHeader)
             .content(payload));
     }
 
@@ -252,7 +303,19 @@ class WebhookControllerTest {
 
         return mockMvc.perform(post("/webhook/github")
             .contentType(MediaType.APPLICATION_JSON)
+            .header(EVENT_HEADER, PULL_REQUEST_EVENT)
             .content(payload));
+    }
+
+    private ResultActions performWebhookWithoutEventHeader(
+        String payload
+    ) throws Exception {
+
+        return mockMvc.perform(post("/webhook/github")
+            .contentType(MediaType.APPLICATION_JSON)
+            .header("X-Hub-Signature-256", SIGNATURE_HEADER)
+            .content(payload)
+        );
     }
 
     private String createLabeledPayload(
