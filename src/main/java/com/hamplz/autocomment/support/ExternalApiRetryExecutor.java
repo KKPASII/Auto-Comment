@@ -14,9 +14,11 @@ public class ExternalApiRetryExecutor {
     private static final Logger log = LoggerFactory.getLogger(ExternalApiRetryExecutor.class);
 
     private final RetryProperties retryProperties;
+    private final ExternalApiMetrics externalApiMetrics;
 
-    public ExternalApiRetryExecutor(RetryProperties retryProperties) {
+    public ExternalApiRetryExecutor(RetryProperties retryProperties, ExternalApiMetrics externalApiMetrics) {
         this.retryProperties = retryProperties;
+        this.externalApiMetrics = externalApiMetrics;
     }
 
     public <T> T execute(ExternalApiOperation operation, Supplier<T> supplier) {
@@ -30,7 +32,11 @@ public class ExternalApiRetryExecutor {
                 if (attempt >= retryProperties.maxAttempts() || !isRetryable(e)) {
                     throw e;
                 }
+
+                externalApiMetrics.recordRetry(operation);
+
                 log.warn("{} failed. retrying attempt {}/{}", operation.logName(), attempt + 1, retryProperties.maxAttempts(), e);
+
                 sleepBeforeRetry();
             }
         }

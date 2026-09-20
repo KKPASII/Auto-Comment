@@ -2,6 +2,7 @@ package com.hamplz.autocomment.review.service;
 
 import com.hamplz.autocomment.review.dto.DispatchResult;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -35,6 +36,8 @@ public class AsyncReviewService {
     }
 
     public void review(PullRequestWebhook parsedWebhook) {
+        Timer.Sample sample = reviewMetrics.startTimer();
+
         try {
             reviewJobStatusService.markRunning(parsedWebhook);
 
@@ -85,6 +88,8 @@ public class AsyncReviewService {
                 parsedWebhook.prNumber(),
                 e
             );
+        } finally {
+            reviewMetrics.stopTimer(sample);
         }
     }
 }
