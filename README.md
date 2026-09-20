@@ -39,21 +39,21 @@ Webhook 요청과 실제 리뷰 작업을 Redis Queue로 분리하여 외부 API
 ## 🛠 기술 스택
 
 ### **Backend**
-  ![Java](https://img.shields.io/badge/Java-21-007396?style=for-the-badge&logo=openjdk&logoColor=white)
-  ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)
+![Java](https://img.shields.io/badge/Java-21-007396?style=for-the-badge&logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)
 
 ### **API**
-  ![OpenAI](https://img.shields.io/badge/OpenAI_API-412991?style=for-the-badge&logo=openai&logoColor=white)
-  ![GitHub API](https://img.shields.io/badge/GitHub_REST_API-181717?style=for-the-badge&logo=github&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI_API-412991?style=for-the-badge&logo=openai&logoColor=white)
+![GitHub API](https://img.shields.io/badge/GitHub_REST_API-181717?style=for-the-badge&logo=github&logoColor=white)
 
 ### **Integration**
-  ![Webhook](https://img.shields.io/badge/GitHub_Webhook-F05032?style=for-the-badge&logo=github&logoColor=white)
+![Webhook](https://img.shields.io/badge/GitHub_Webhook-F05032?style=for-the-badge&logo=github&logoColor=white)
 
 ### **Data / Queue**
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 
 ### **Networking**
-  ![ngrok](https://img.shields.io/badge/ngrok-1F1E37?style=for-the-badge&logo=ngrok&logoColor=white)
+![ngrok](https://img.shields.io/badge/ngrok-1F1E37?style=for-the-badge&logo=ngrok&logoColor=white)
 
 ---
 
@@ -100,15 +100,13 @@ OpenAI API - 코드 리뷰 생성
 │ PR 댓글 등록     │ 리뷰 파일 저장    │
 └─────────────────┴─────────────────┘
                             ↓
-                   ┌────────┴────────┐
-                   │                 │
-               History           latest.md
-                   │                 │
-                   └────────┬────────┘
+                       History 저장
                             ↓
-                 부분 실패 시 실패 Task Retry
+                      latest.md 저장
                             ↓
-             SUCCESS / PARTIAL_FAILED / FAILED
+                  부분 실패 시 실패 Task Retry
+                            ↓
+              SUCCESS / PARTIAL_FAILED / FAILED
 ```
 
 전체 처리 과정은 다음과 같습니다.
@@ -123,9 +121,7 @@ OpenAI API - 코드 리뷰 생성
 8. GitHub API를 통해 PR diff 조회<br>![img_1.png](src/main/resources/static/images/img_1.png)<br><br>
 9. OpenAI API를 통해 리뷰 생성
 10. PR 댓글 등록과 리뷰 파일 저장 병렬 처리<br>![img.png](src/main/resources/static/images/img.png)<br><br>
-11. 리뷰 파일 저장 내부에서 History / Latest 저장 병렬 처리<br>
-    ![img_2.png](src/main/resources/static/images/img_2.png)<br><br>
-    ![img_3.png](src/main/resources/static/images/img_3.png)<br><br>
+11. 리뷰 파일 저장 내부에서는 같은 브랜치에 대한 동시 Write 충돌을 방지하기 위해 History → latest.md 순서로 저장
 12. 부분 실패 발생 시 실패한 작업만 선택적으로 재시도
 13. 최종 처리 결과를 Redis에 상태로 저장
 
@@ -153,7 +149,21 @@ reviews/
 - `{날짜}/{시간}.md`
     - 리뷰 실행 시점별 History 보관
 
-두 파일은 서로 독립적인 작업이기 때문에 병렬로 저장합니다.
+두 파일은 서로 다른 경로에 저장되지만, 모두 동일한 `auto-comment-logs` 브랜치에 Write하는 작업입니다.
+
+GitHub Contents API를 이용한 두 저장 작업을 병렬로 수행하면 한 작업이 먼저 브랜치를 갱신한 뒤
+다른 작업이 이전 브랜치 상태를 기준으로 저장을 시도하면서 `409 Conflict`가 발생할 수 있습니다.
+
+따라서 리뷰 파일은 다음 순서로 저장합니다.
+
+```text
+History 저장
+   ↓
+latest.md 저장
+```
+
+외부 API 단위 Retry와 별개로, 일부 저장 작업이 실패한 경우에는 성공한 작업을 다시 수행하지 않고
+실패한 Task만 선택적으로 재시도합니다.
 
 ---
 
@@ -240,7 +250,7 @@ Redis I/O 자체를 Non-Blocking으로 구현한 것은 아닙니다.
 **HTTP 요청 처리 경로에서 분리**하여 Webhook 요청 Thread가 외부 API 응답을 기다리지 않도록 했습니다.
 
 현재 Worker는 Review Job 하나를 완료한 뒤 다음 Job을 처리하는 순차 소비 방식이지만,
- Worker가 Job을 처리하는 동안에도 새로운 Webhook 요청은 Redis Queue에 계속 저장할 수 있습니다.
+Worker가 Job을 처리하는 동안에도 새로운 Webhook 요청은 Redis Queue에 계속 저장할 수 있습니다.
 
 ### ✅ 결과
 
@@ -291,7 +301,8 @@ Review File 저장
 
 ### 🛠 해결
 
-`PR 댓글 등록`과 `리뷰 파일 저장`을 별도의 Executor에서 병렬 처리하도록 변경했습니다.
+`PR 댓글 등록`과 `리뷰 파일 저장`은 서로의 결과에 의존하지 않기 때문에
+별도의 Executor에서 병렬 처리하도록 변경했습니다.
 
 ```text
              GPT Review
@@ -300,36 +311,38 @@ Review File 저장
         │                 │
     PR Comment        Review File
 ```
-리뷰 파일 저장 내부에서도 `History`와 `latest.md` 저장은 서로 독립적이므로 병렬 처리했습니다.
+
+반면 리뷰 파일 저장 내부의 `History`와 `latest.md`는 서로 다른 파일을 저장하지만,
+둘 다 같은 `auto-comment-logs` 브랜치에 Write하는 작업이므로 완전히 독립적인 작업은 아닙니다.
+
+처음에는 두 작업도 병렬 처리했지만 실제 테스트 과정에서,
+한 작업이 먼저 브랜치를 갱신하면 다른 작업이 이전 브랜치 상태를 기준으로 Write하면서
+`409 Conflict`가 발생하는 race condition을 확인했습니다.
 
 ```text
-          Review File
-               ↓
-        ┌──────┴──────┐
-        │             │
-     History        Latest
+Review File
+    ↓
+History 저장
+    ↓
+latest.md 저장
 ```
+
+따라서 `History → latest.md` 순서로 저장하도록 변경했습니다.
 
 ### ✅ 결과
 
-순차 처리에서는 두 작업의 처리 시간이 합산될 수 있습니다.
-
-```text
-Comment 처리 시간
-+
-ReviewFile 처리 시간
-```
-
-병렬 처리 이후에는 두 작업 중 더 오래 걸리는 작업의 완료 시간을 중심으로 기다리는 구조로 변경했습니다.
+`PR 댓글 등록`과 `리뷰 파일 저장`은 병렬로 처리하므로
+두 작업의 처리 시간이 단순히 합산되지 않고 더 오래 걸리는 작업의 완료 시간을 중심으로 기다리게 됩니다.
 
 ```text
 max( Comment 처리 시간, ReviewFile 처리 시간 )
 ```
 
-History / Latest 저장도 동일한 구조로 개선했습니다.
+반면 같은 브랜치 상태를 변경하는 `History / latest.md`는 순차 처리하여
+GitHub Contents API의 동시 Write 충돌을 방지했습니다.
 
 별도의 성능 벤치마크를 수행하지 않아 정확한 감소율을 측정하지는 않았지만,
-**서로 독립적인 I/O 작업을 순차 실행에서 병렬 실행으로 변경하여 후처리 대기 시간을 구조적으로 줄였습니다.**
+**독립적인 외부 I/O 작업만 병렬화하고 공유 상태를 변경하는 작업은 순차 처리하도록 병렬 처리 범위를 조정했습니다.**
 
 ---
 
@@ -337,7 +350,7 @@ History / Latest 저장도 동일한 구조로 개선했습니다.
 
 ### 🔍 문제 상황
 
-병렬 처리를 적용한 뒤 테스트하는 과정에서,
+후처리 작업의 실패 처리를 테스트하는 과정에서,
 일부 작업이 실패했음에도 전체 Review Job이 `SUCCESS`로 처리되는 문제를 발견했습니다.
 
 ```text
@@ -376,7 +389,7 @@ Job SUCCESS ❌
 
 ### 해결
 
-각 병렬 작업의 실행 결과를 별도의 객체로 관리하고,
+각 후처리 작업의 실행 결과를 별도의 객체로 관리하고,
 하위 작업의 성공/실패 정보를 상위 계층까지 전달하도록 변경했습니다.
 
 ```text
@@ -398,7 +411,7 @@ DispatchResult dispatchResult = new DispatchResult(
 );
 ```
 
-이를 통해 두 병렬 작업의 결과를 각각 확인한 뒤
+이를 통해 각 후처리 작업의 결과를 확인한 뒤
 전체 Review Job의 최종 상태를 판단할 수 있도록 했습니다.
 
 또한 부분 실패가 발생하면 해당 처리 단계에서
@@ -456,7 +469,7 @@ Review Job 자체를 완료하지 못함
 
 이를 통해 다음과 같이 개선했습니다.
 
-- 병렬 작업의 부분 실패를 명시적으로 식별
+- 후처리 작업의 부분 실패를 명시적으로 식별
 - 하위 작업의 성공/실패 결과를 상위 계층까지 전달
 - 부분 실패 시 이미 성공한 작업은 유지하고, 실패한 작업만 재시도
 - 전체 실패와 부분 실패를 상태 수준에서 구분
@@ -575,7 +588,7 @@ GitHub / OpenAI와 같은 외부 시스템은
 - 네트워크 계층의 일시적 오류
 
 API 단위 Retry가 모두 실패한 이후에도
-병렬 후처리 작업에서는 실패한 Task만 한 번 더 선택적으로 수행합니다.
+후처리 단계에서는 실패한 Task만 한 번 더 선택적으로 수행합니다.
 
 따라서 Retry 범위를 다음과 같이 구분하고 있습니다.
 
@@ -632,8 +645,8 @@ Event Header와 Payload Filter는 요청의 처리 대상 여부를 판단합니
 | Webhook 응답 처리 | GitHub / OpenAI 등 외부 API 작업이 모두 끝난 뒤 응답 | Redis Queue에 Job 저장 후 `202 Accepted` 반환 |
 | 실제 리뷰 작업 실행 | Webhook 요청 Thread에서 직접 실행 | `ReviewJobWorker`가 Queue에서 Job을 가져와 별도 처리 |
 | PR 댓글 등록 + 리뷰 파일 저장 | 두 작업을 순차 실행 | 서로 독립적인 작업으로 판단하여 병렬 실행 |
-| History + latest.md 저장 | 두 파일 저장을 순차 실행 | 별도 Executor에서 병렬 실행 |
-| 병렬 작업 부분 실패 | 일부 실패해도 상위에서 전체 성공으로 판단할 가능성 존재 | 작업별 결과를 별도로 관리하여 부분 실패 식별 |
+| History + latest.md 저장 | 두 파일 저장을 순차 실행 | 병렬화 시 동일 브랜치 Write 충돌 방지를 위해 순차 실행 |
+| 후처리 작업 부분 실패 | 일부 실패해도 상위에서 전체 성공으로 판단할 가능성 존재 | 작업별 결과를 별도로 관리하여 부분 실패 식별 |
 | 실패 작업 재시도 | 외부 API 호출 자체에 대한 Retry만 존재 | API Retry + 실패한 Comment / ReviewFile / History / Latest Task만 선택적으로 Retry |
 | 처리 중 서버 종료 | 처리 중이던 Job이 유실될 가능성 존재 | Processing Queue에 보관하고 재시작 시 대기 Queue로 복구 |
 | 작업 상태 관리 | `SUCCESS / FAILED` 중심 | `RUNNING / SUCCESS / PARTIAL_FAILED / FAILED`로 세분화 |
@@ -643,11 +656,13 @@ Event Header와 Payload Filter는 요청의 처리 대상 여부를 판단합니
 
 즉, 시스템 전체를 Non-Blocking으로 변경한 것이 아니라
 **시간이 오래 걸리는 Blocking 외부 API 작업을 Webhook 요청 처리 경로에서 분리하고,
-하나의 Review Job 내부에서 서로 의존하지 않는 후처리 작업을 별도의 Executor를 통해 병렬 처리하도록 구성**했습니다.
+하나의 Review Job 내부에서도 실제로 서로 독립적인 후처리 작업만 별도의 Executor를 통해 병렬 처리하도록 구성**했습니다.
 
 현재 `ReviewJobWorker`는 Job을 하나씩 순차적으로 소비하며,
-병렬 처리는 `Comment / ReviewFile`, `History / Latest`처럼
-하나의 Job 내부에서 서로 독립적인 작업에 적용되어 있습니다..
+병렬 처리는 `Comment / ReviewFile`처럼 서로 독립적인 작업에만 적용합니다.
+
+`History / latest.md` 저장은 같은 브랜치 상태를 변경하는 작업이므로
+GitHub Contents API의 동시 Write 충돌을 방지하기 위해 순차적으로 처리합니다.
 
 ---
 
@@ -742,15 +757,15 @@ GitHub Comment와 같은 POST 요청은
 
 - GPT 리뷰 생성 이후의 `PR 댓글 등록`과 `리뷰 파일 저장`은 서로 의존하지 않는 작업이므로 별도의 Executor를 이용해 병렬 처리했습니다. 기존에는 두 작업의 처리 시간이 순차적으로 합산되는 구조였지만, 병렬 처리 후에는 **두 작업 중 더 오래 걸리는 작업의 완료 시간을 중심으로 기다리는 구조로 변경하여 후처리 대기 시간을 줄였습니다.**
 
-- 리뷰 파일 저장 내부의 `History`와 `latest.md` 저장도 동일하게 병렬 처리하여, 파일 저장 작업 역시 순차 처리보다 전체 대기 시간이 짧아질 수 있도록 개선했습니다. 별도의 성능 측정을 수행하지 않아 정확한 감소율을 제시하지는 않았지만, 독립적인 I/O 작업을 순차 실행하던 구조를 병렬 실행 구조로 변경했습니다.
+- 리뷰 파일 저장 내부의 `History`와 `latest.md`는 처음에는 서로 다른 파일이라는 이유로 병렬 처리했지만, 두 작업 모두 같은 `auto-comment-logs` 브랜치에 Write하기 때문에 race condition이 발생할 수 있음을 확인했습니다. 한 작업이 먼저 브랜치를 갱신하면 다른 작업이 이전 브랜치 상태를 기준으로 저장하면서 `409 Conflict`가 발생할 수 있어, **공유 상태를 변경하는 작업은 순차 처리하도록 변경했습니다.**
 
-- 병렬 처리 적용 후 `Comment 성공 / ReviewFile 실패`, `History 성공 / Latest 실패`처럼 일부 작업만 실패하는 문제를 테스트 과정에서 발견했습니다. 각 작업 결과를 `DispatchTaskResult`, `DispatchResult`, `ReviewFileSaveResult`로 분리해 관리하고, **전체 작업을 다시 실행하지 않고 실패한 작업만 선택적으로 재시도하도록 개선했습니다.**
+- 후처리 과정에서 `Comment 성공 / ReviewFile 실패`, `History 성공 / Latest 실패`처럼 일부 작업만 실패할 수 있으므로, 각 작업 결과를 `DispatchTaskResult`, `DispatchResult`, `ReviewFileSaveResult`로 분리해 관리하고 **전체 작업을 다시 실행하지 않고 실패한 작업만 선택적으로 재시도하도록 개선했습니다.**
 
 - 작업 상태를 `SUCCESS / FAILED`만으로 관리하던 구조에서 `PARTIAL_FAILED`를 추가하여, 리뷰 생성 자체가 실패한 경우와 리뷰 생성 이후 일부 후처리만 실패한 경우를 구분할 수 있도록 개선했습니다.
 
 - Redis Queue에서 작업을 바로 삭제하지 않고 Processing Queue로 이동한 뒤 완료 시 제거하도록 구성하여, 애플리케이션이 작업 도중 종료되더라도 재시작 시 처리 중이던 Job을 다시 Queue로 복구할 수 있도록 했습니다.
 
-- 외부 API의 일시적 장애에는 API 단위 Retry를 적용하고, 병렬 처리의 부분 실패에는 Task 단위 Retry를 적용하면서 **실패 범위에 따라 재시도 범위를 구분했습니다.** 전체 Job Retry와 외부 Side Effect의 완전한 멱등성 보장은 추가 개선 과제로 남겨두었습니다.
+- 외부 API의 일시적 장애에는 API 단위 Retry를 적용하고, 후처리 작업의 부분 실패에는 Task 단위 Retry를 적용하면서 **실패 범위에 따라 재시도 범위를 구분했습니다.** 전체 Job Retry와 외부 Side Effect의 완전한 멱등성 보장은 추가 개선 과제로 남겨두었습니다.
 
 ---
 
