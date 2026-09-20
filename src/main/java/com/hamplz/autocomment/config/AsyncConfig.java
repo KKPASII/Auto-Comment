@@ -9,8 +9,6 @@ import java.util.concurrent.Executor;
 @Configuration
 public class AsyncConfig {
 
-    public static final String FILE_TASK_EXECUTOR = "fileTaskExecutor";
-
     @Bean(name = "reviewTaskExecutor")
     public Executor reviewTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -33,7 +31,7 @@ public class AsyncConfig {
         return executor;
     }
 
-    @Bean(name = FILE_TASK_EXECUTOR)
+    @Bean(name = "fileTaskExecutor")
     public Executor fileTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);

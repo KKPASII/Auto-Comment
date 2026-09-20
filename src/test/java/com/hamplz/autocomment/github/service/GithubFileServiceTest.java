@@ -6,13 +6,15 @@ import com.hamplz.autocomment.review.ReviewFileFormatter;
 import com.hamplz.autocomment.review.dto.DispatchTaskResult;
 import com.hamplz.autocomment.support.ExternalApiRetryExecutor;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.RestClient;
 
-import java.util.concurrent.Executor;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -20,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-public class GithubFileServiceTest {
+class GithubFileServiceTest {
 
     @Mock
     private RestClient.Builder restClientBuilder;
@@ -44,22 +46,52 @@ public class GithubFileServiceTest {
         when(restClientBuilder.build())
             .thenReturn(restClient);
 
-        Executor directExecutor = Runnable::run;
-
         githubFileService = new GithubFileService(
             restClientBuilder,
             githubProperties,
             reviewFileFormatter,
-            retryExecutor,
-            directExecutor
+            retryExecutor
         );
     }
 
     @Test
-    void history는_성공하고_latest가_실패하면_각각의_결과를_반환한다() {
+    @DisplayName("History 저장 후 latest를 순차적으로 저장한다")
+    void shouldSaveHistoryBeforeLatest() {
+        // given
+        List<String> executionOrder = new ArrayList<>();
+
+        Supplier<DispatchTaskResult> historyTask = () -> {
+            executionOrder.add("history");
+            return DispatchTaskResult.success();
+        };
+
+        Supplier<DispatchTaskResult> latestTask = () -> {
+            executionOrder.add("latest");
+            return DispatchTaskResult.success();
+        };
+
         // when
         ReviewFileSaveResult result =
-            githubFileService.saveFilesInParallel(
+            githubFileService.saveFilesSequentially(
+                historyTask,
+                latestTask
+            );
+
+        // then
+        assertEquals(
+            List.of("history", "latest"),
+            executionOrder
+        );
+
+        assertTrue(result.isFullySucceeded());
+    }
+
+    @Test
+    @DisplayName("History는 성공하고 latest가 실패하면 각각의 결과를 반환한다")
+    void shouldReturnHistorySuccessAndLatestFailure() {
+        // when
+        ReviewFileSaveResult result =
+            githubFileService.saveFilesSequentially(
                 DispatchTaskResult::success,
                 () -> DispatchTaskResult.failure(
                     new RuntimeException("latest 저장 실패")
@@ -67,17 +99,9 @@ public class GithubFileServiceTest {
             );
 
         // then
-        assertTrue(
-            result.historyResult().succeeded()
-        );
-
-        assertFalse(
-            result.latestResult().succeeded()
-        );
-
-        assertFalse(
-            result.isFullySucceeded()
-        );
+        assertTrue(result.historyResult().succeeded());
+        assertFalse(result.latestResult().succeeded());
+        assertFalse(result.isFullySucceeded());
 
         assertEquals(
             "latest 저장 실패",
@@ -86,10 +110,11 @@ public class GithubFileServiceTest {
     }
 
     @Test
-    void history가_실패하고_latest는_성공하면_각각의_결과를_반환한다() {
+    @DisplayName("History가 실패하고 latest는 성공하면 각각의 결과를 반환한다")
+    void shouldReturnHistoryFailureAndLatestSuccess() {
         // when
         ReviewFileSaveResult result =
-            githubFileService.saveFilesInParallel(
+            githubFileService.saveFilesSequentially(
                 () -> DispatchTaskResult.failure(
                     new RuntimeException("history 저장 실패")
                 ),
@@ -97,17 +122,9 @@ public class GithubFileServiceTest {
             );
 
         // then
-        assertFalse(
-            result.historyResult().succeeded()
-        );
-
-        assertTrue(
-            result.latestResult().succeeded()
-        );
-
-        assertFalse(
-            result.isFullySucceeded()
-        );
+        assertFalse(result.historyResult().succeeded());
+        assertTrue(result.latestResult().succeeded());
+        assertFalse(result.isFullySucceeded());
 
         assertEquals(
             "history 저장 실패",
@@ -116,13 +133,14 @@ public class GithubFileServiceTest {
     }
 
     @Test
-    void latest만_실패하면_history는_retry하지_않고_latest만_retry한다() {
+    @DisplayName("latest만 실패하면 History는 재시도하지 않고 latest만 재시도한다")
+    void shouldRetryOnlyLatestWhenLatestFails() {
+        // given
         AtomicInteger historyCount = new AtomicInteger();
         AtomicInteger latestCount = new AtomicInteger();
 
         Supplier<DispatchTaskResult> historyTask = () -> {
             historyCount.incrementAndGet();
-
             return DispatchTaskResult.success();
         };
 
@@ -138,8 +156,9 @@ public class GithubFileServiceTest {
             return DispatchTaskResult.success();
         };
 
+        // when
         ReviewFileSaveResult firstResult =
-            githubFileService.saveFilesInParallel(
+            githubFileService.saveFilesSequentially(
                 historyTask,
                 latestTask
             );
@@ -151,17 +170,19 @@ public class GithubFileServiceTest {
                 latestTask
             );
 
+        // then
         assertEquals(1, historyCount.get());
         assertEquals(2, latestCount.get());
 
         assertTrue(finalResult.historyResult().succeeded());
         assertTrue(finalResult.latestResult().succeeded());
-
         assertTrue(finalResult.isFullySucceeded());
     }
 
     @Test
-    void history만_실패하면_latest는_retry하지_않고_history만_retry한다() {
+    @DisplayName("History만 실패하면 latest는 재시도하지 않고 History만 재시도한다")
+    void shouldRetryOnlyHistoryWhenHistoryFails() {
+        // given
         AtomicInteger historyCount = new AtomicInteger();
         AtomicInteger latestCount = new AtomicInteger();
 
@@ -179,12 +200,12 @@ public class GithubFileServiceTest {
 
         Supplier<DispatchTaskResult> latestTask = () -> {
             latestCount.incrementAndGet();
-
             return DispatchTaskResult.success();
         };
 
+        // when
         ReviewFileSaveResult firstResult =
-            githubFileService.saveFilesInParallel(
+            githubFileService.saveFilesSequentially(
                 historyTask,
                 latestTask
             );
@@ -196,9 +217,12 @@ public class GithubFileServiceTest {
                 latestTask
             );
 
+        // then
         assertEquals(2, historyCount.get());
         assertEquals(1, latestCount.get());
 
+        assertTrue(finalResult.historyResult().succeeded());
+        assertTrue(finalResult.latestResult().succeeded());
         assertTrue(finalResult.isFullySucceeded());
     }
 }

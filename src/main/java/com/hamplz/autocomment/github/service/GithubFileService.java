@@ -1,6 +1,5 @@
 package com.hamplz.autocomment.github.service;
 
-import com.hamplz.autocomment.config.AsyncConfig;
 import com.hamplz.autocomment.config.GithubProperties;
 import com.hamplz.autocomment.github.dto.GithubFileRequest;
 import com.hamplz.autocomment.github.dto.GithubRequestFactory;
@@ -10,7 +9,6 @@ import com.hamplz.autocomment.review.dto.DispatchTaskResult;
 import com.hamplz.autocomment.support.ExternalApiRetryExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -22,16 +20,9 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Base64;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 
-import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CHECK_REVIEW_BRANCH;
-import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_CREATE_REVIEW_BRANCH;
-import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_GET_BASE_BRANCH_SHA;
-import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_GET_REVIEW_FILE_SHA;
-import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_SAVE_REVIEW_HISTORY_FILE;
-import static com.hamplz.autocomment.support.ExternalApiOperation.GITHUB_SAVE_REVIEW_LATEST_FILE;
+import static com.hamplz.autocomment.support.ExternalApiOperation.*;
 
 @Service
 public class GithubFileService {
@@ -42,20 +33,17 @@ public class GithubFileService {
     private final GithubProperties githubProperties;
     private final ReviewFileFormatter reviewFileFormatter;
     private final ExternalApiRetryExecutor retryExecutor;
-    private final Executor fileTaskExecutor;
 
     public GithubFileService(
         RestClient.Builder restClientBuilder,
         GithubProperties githubProperties,
         ReviewFileFormatter reviewFileFormatter,
-        ExternalApiRetryExecutor retryExecutor,
-        @Qualifier(AsyncConfig.FILE_TASK_EXECUTOR) Executor fileTaskExecutor
+        ExternalApiRetryExecutor retryExecutor
     ) {
         this.restClient = restClientBuilder.build();
         this.githubProperties = githubProperties;
         this.reviewFileFormatter = reviewFileFormatter;
         this.retryExecutor = retryExecutor;
-        this.fileTaskExecutor = fileTaskExecutor;
     }
 
     public ReviewFileSaveResult saveReviewFile(
@@ -84,7 +72,7 @@ public class GithubFileService {
         Supplier<DispatchTaskResult> latestTask =
             () -> saveLatestFileSafely(repoFullName, prNumber, markdownContent);
 
-        ReviewFileSaveResult result = saveFilesInParallel(historyTask, latestTask);
+        ReviewFileSaveResult result = saveFilesSequentially(historyTask, latestTask);
 
         if (!result.isFullySucceeded()) {
             result = retryFailedFileTask(result, historyTask, latestTask);
@@ -106,31 +94,22 @@ public class GithubFileService {
             previousResult.latestResult().succeeded()
             ? () -> previousResult.latestResult() : latestTask;
 
-        return saveFilesInParallel(
+        return saveFilesSequentially(
             historyRetryTask,
             latestRetryTask
         );
     }
 
-    ReviewFileSaveResult saveFilesInParallel(
+    ReviewFileSaveResult saveFilesSequentially(
         Supplier<DispatchTaskResult> historyTask,
         Supplier<DispatchTaskResult> latestTask
     ) {
-        CompletableFuture<DispatchTaskResult> historyFuture =
-            CompletableFuture.supplyAsync(
-                historyTask,
-                fileTaskExecutor
-            );
-
-        CompletableFuture<DispatchTaskResult> latestFuture =
-            CompletableFuture.supplyAsync(
-                latestTask,
-                fileTaskExecutor
-            );
+        DispatchTaskResult historyResult = historyTask.get();
+        DispatchTaskResult latestResult = latestTask.get();
 
         return new ReviewFileSaveResult(
-            historyFuture.join(),
-            latestFuture.join()
+            historyResult,
+            latestResult
         );
     }
 
