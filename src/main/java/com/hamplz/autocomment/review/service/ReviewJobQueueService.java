@@ -60,4 +60,14 @@ public class ReviewJobQueueService {
     private String processingQueueKey() {
         return reviewQueueProperties.processingKey();
     }
+
+    public long waitingQueueSize() {
+        Long size = redisTemplate.opsForList().size(queueKey());
+        return size == null ? 0 : size;
+    }
+
+    public long processingQueueSize() {
+        Long size = redisTemplate.opsForList().size(processingQueueKey());
+        return size == null ? 0 : size;
+    }
 }

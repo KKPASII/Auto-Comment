@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import com.hamplz.autocomment.review.ReviewMetrics;
 
 @Service
 public class AsyncReviewService {
@@ -17,13 +18,15 @@ public class AsyncReviewService {
 
     private final PullRequestReviewService pullRequestReviewService;
     private final ReviewJobStatusService reviewJobStatusService;
+    private final ReviewMetrics reviewMetrics;
 
     public AsyncReviewService(
         PullRequestReviewService pullRequestReviewService,
-        ReviewJobStatusService reviewJobStatusService
+        ReviewJobStatusService reviewJobStatusService, ReviewMetrics reviewMetrics
     ) {
         this.pullRequestReviewService = pullRequestReviewService;
         this.reviewJobStatusService = reviewJobStatusService;
+        this.reviewMetrics = reviewMetrics;
     }
 
     @Async("reviewTaskExecutor")
@@ -46,6 +49,8 @@ public class AsyncReviewService {
             if (dispatchResult.isFullySucceeded()) {
                 reviewJobStatusService.markSuccess(parsedWebhook);
 
+                reviewMetrics.recordSuccess();
+
                 log.info(
                     LOG_REVIEW_SUCCEEDED,
                     parsedWebhook.repoFullName(),
@@ -60,6 +65,8 @@ public class AsyncReviewService {
                 dispatchResult.summary()
             );
 
+            reviewMetrics.recordPartialFailed();
+
             log.warn(
                 "Review job partially failed - {} PR #{} {}",
                 parsedWebhook.repoFullName(),
@@ -68,6 +75,8 @@ public class AsyncReviewService {
             );
 
         } catch (Exception e) {
+            reviewMetrics.recordFailed();
+
             reviewJobStatusService.markFailed(parsedWebhook, e);
 
             log.error(

@@ -2,6 +2,7 @@ package com.hamplz.autocomment.review.service;
 
 import com.hamplz.autocomment.github.service.GithubDiffService;
 import com.hamplz.autocomment.openai.GptReviewService;
+import com.hamplz.autocomment.review.ReviewMetrics;
 import com.hamplz.autocomment.review.dto.DispatchTaskResult;
 import com.hamplz.autocomment.webhook.dto.PullRequestAction;
 import com.hamplz.autocomment.webhook.dto.PullRequestWebhook;
@@ -32,7 +33,14 @@ public class AsyncReviewServiceTest {
     @Mock
     private ReviewJobStatusService reviewJobStatusService;
 
+    @Mock
+    private ReviewMetrics reviewMetrics;
+
     private AsyncReviewService asyncReviewService;
+
+    public AsyncReviewServiceTest(ReviewMetrics reviewMetrics) {
+        this.reviewMetrics = reviewMetrics;
+    }
 
     @BeforeEach
     void setUp() {
@@ -46,7 +54,8 @@ public class AsyncReviewServiceTest {
         asyncReviewService =
             new AsyncReviewService(
                 pullRequestReviewService,
-                reviewJobStatusService
+                reviewJobStatusService,
+                reviewMetrics
             );
     }
 
@@ -97,6 +106,15 @@ public class AsyncReviewServiceTest {
                 eq(webhook),
                 contains("saveReview=failed")
             );
+
+        verify(reviewMetrics, never())
+            .recordSuccess();
+
+        verify(reviewMetrics)
+            .recordPartialFailed();
+
+        verify(reviewMetrics, never())
+            .recordFailed();
     }
 
     private PullRequestWebhook createWebhook() {
