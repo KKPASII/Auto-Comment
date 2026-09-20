@@ -39,3 +39,15 @@ github:
   api-url: https://api.github.com
   base-url: https://github.com/
   review-branch: auto-comment-logs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
